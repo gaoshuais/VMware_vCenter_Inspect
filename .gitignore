@@ -1,0 +1,24 @@
+# 真实环境生成的报告 (含 IP / Datastore / VM 名等敏感数据)
+report_*.html
+report_*.docx
+report_*.md
+report_*.json
+
+# Debug log (Invoke-VC 抓的 endpoint 真实返回)
+vcenter_debug_*.log
+
+# API endpoint 探测样本 (含真实拓扑)
+probe/
+
+# Word 临时锁文件
+~$*.docx
+~$*.doc
+
+# OS / IDE
+Thumbs.db
+.DS_Store
+.vscode/
+.idea/
+*.swp
+*.bak
+*.tmp
