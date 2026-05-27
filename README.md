@@ -10,9 +10,9 @@ PowerShell + REST API 写的 vCenter 一键巡检工具,生成工程师风 HTML 
 
 ## 样张报告
 
-仓库附带一份脱敏 demo 报告,可直接打开浏览器预览效果:
+![vCenter Inspect 报告样张](docs/report-preview.png)
 
-- [`report_demo_2026-05-25.html`](report_demo_2026-05-25.html) — 8.0 风格示例 (主机名 / IP / Datastore 名均已脱敏)
+> 首屏效果（侧栏 TOC + 蓝色 metadata banner + Summary 卡片 + 章节 1 数据表）。完整报告（含全部 17 章节 + scroll-spy 高亮 + 总体建议）下载 [`report_demo_2026-05-25.html`](report_demo_2026-05-25.html) 浏览器打开查看。所有数据已脱敏。
 
 ## 快速开始
 
