@@ -92,7 +92,7 @@ Invoke-WebRequest `
 # 出 Word（给领导邮件用，需本机装 Office Word）
 .\html_to_docx.ps1 -InputPath .\report_10.0.0.20_2026-05-25.html
 
-# 出 Markdown（接 Wiki / Notion / 公众号用）
+# 出 Markdown（接 Wiki / Notion / 博客用）
 .\html_to_md.ps1 -InputPath .\report_10.0.0.20_2026-05-25.html
 ```
 
