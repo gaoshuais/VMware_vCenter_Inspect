@@ -3,6 +3,8 @@ report_*.html
 report_*.docx
 report_*.md
 report_*.json
+# 例外：脱敏 demo 报告允许入仓 (作为样张)
+!report_demo_*.html
 
 # Debug log (Invoke-VC 抓的 endpoint 真实返回)
 vcenter_debug_*.log
@@ -13,6 +15,12 @@ probe/
 # Word 临时锁文件
 ~$*.docx
 ~$*.doc
+
+# 截图（含真实环境信息，本地保留不入仓）
+docs/
+screenshots_local/
+screenshot_*.png
+*.png
 
 # OS / IDE
 Thumbs.db

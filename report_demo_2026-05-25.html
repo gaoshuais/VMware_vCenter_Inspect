@@ -1,0 +1,769 @@
+﻿<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>vCenter 巡检报告 — 10.0.0.20 — 2026-05-25</title>
+<style>:root{
+  --bg:#0f1419;--bg-side:#0a0d12;--bg-card:#161b22;--bg-card-2:#1c2330;
+  --fg:#d4d9e0;--fg-mute:#7a8290;--fg-dim:#5a6270;
+  --border:#2a313c;--border-strong:#3a414c;
+  --accent:#58a6ff;--accent-2:#79b8ff;
+  --green:#3fb950;--amber:#d29922;--red:#f85149;--gray:#6e7681;--blue:#58a6ff;
+  --green-bg:rgba(63,185,80,.12);--amber-bg:rgba(210,153,34,.12);
+  --red-bg:rgba(248,81,73,.12);--gray-bg:rgba(110,118,129,.15);--blue-bg:rgba(88,166,255,.12);
+  --mono:'JetBrains Mono','Fira Code','SF Mono','Consolas','Cascadia Mono',monospace;
+  --sans:-apple-system,BlinkMacSystemFont,'Segoe UI','Microsoft YaHei','PingFang SC',Roboto,sans-serif;
+}
+*{box-sizing:border-box}
+html,body{margin:0;padding:0;background:var(--bg);color:var(--fg);font-family:var(--sans);font-size:14px;line-height:1.55;-webkit-font-smoothing:antialiased}
+a{color:var(--accent);text-decoration:none}
+a:hover{text-decoration:underline}
+code,pre,.mono{font-family:var(--mono)}
+hr{border:none;border-top:1px solid var(--border);margin:32px 0}
+
+/* sidebar */
+.sidebar{position:fixed;top:0;left:0;width:260px;height:100vh;background:var(--bg-side);border-right:1px solid var(--border);overflow-y:auto;padding:20px 0;z-index:10}
+.sidebar .brand{padding:0 20px 20px;border-bottom:1px solid var(--border);margin-bottom:12px}
+.sidebar .brand .logo{display:flex;align-items:center;gap:10px}
+.sidebar .brand .logo svg{width:28px;height:28px;flex-shrink:0}
+.sidebar .brand .name{font-weight:600;font-size:15px;color:var(--fg)}
+.sidebar .brand .sub{font-size:11px;color:var(--fg-mute);margin-top:2px;font-family:var(--mono)}
+.sidebar nav{padding:0 8px}
+.sidebar nav a{display:flex;align-items:center;gap:8px;padding:7px 12px;color:var(--fg-mute);font-size:13px;border-radius:5px;border-left:2px solid transparent;margin:1px 0;transition:none}
+.sidebar nav a .num{font-family:var(--mono);font-size:11px;color:var(--fg-dim);min-width:18px}
+.sidebar nav a:hover{background:var(--bg-card);color:var(--fg);text-decoration:none}
+.sidebar nav a.active{background:var(--bg-card);color:var(--accent);border-left-color:var(--accent)}
+.sidebar nav a.active .num{color:var(--accent)}
+
+/* main */
+.main{margin-left:260px;max-width:1280px;padding:32px 40px 80px}
+
+/* banner */
+.banner{background:var(--bg-card);border:1px solid var(--border);border-left:3px solid var(--accent);border-radius:8px;padding:24px 28px;margin-bottom:32px}
+.banner .tag{display:inline-block;background:var(--accent-2);color:#001020;font-size:11px;font-weight:700;padding:3px 10px;border-radius:12px;letter-spacing:.4px}
+.banner h1{margin:8px 0 6px;font-size:22px;font-weight:600;letter-spacing:-.2px}
+.banner .sub{color:var(--fg-mute);font-size:13px;font-family:var(--mono);margin-bottom:18px}
+.banner .meta{display:grid;grid-template-columns:repeat(3,1fr);gap:12px 32px;padding-top:16px;border-top:1px solid var(--border)}
+.banner .meta dt{font-size:11px;color:var(--fg-mute);text-transform:uppercase;letter-spacing:.5px;margin-bottom:3px}
+.banner .meta dd{margin:0;font-size:14px;font-family:var(--mono);color:var(--fg);word-break:break-all}
+
+/* section */
+section{margin-bottom:40px}
+section h2{display:flex;align-items:center;gap:12px;font-size:18px;font-weight:600;margin:0 0 16px;padding:0 0 10px;border-bottom:1px solid var(--border)}
+section h2 .num{display:inline-flex;align-items:center;justify-content:center;width:28px;height:28px;background:var(--bg-card);color:var(--accent);font-size:13px;font-family:var(--mono);border:1px solid var(--border-strong);border-radius:6px}
+section h2 .lbl{font-size:11px;font-weight:500;color:var(--fg-mute);font-family:var(--mono);margin-left:auto;letter-spacing:.4px}
+
+/* summary cards */
+.cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:14px;margin-bottom:18px}
+.card{background:var(--bg-card);border:1px solid var(--border);border-radius:6px;padding:18px;display:flex;align-items:center;gap:16px}
+.card .icon{flex-shrink:0;width:44px;height:44px;border-radius:6px;display:flex;align-items:center;justify-content:center}
+.card .icon svg{width:22px;height:22px}
+.card .icon-green{background:var(--green-bg)}.card .icon-green svg{fill:var(--green)}
+.card .icon-amber{background:var(--amber-bg)}.card .icon-amber svg{fill:var(--amber)}
+.card .icon-red  {background:var(--red-bg)  }.card .icon-red   svg{fill:var(--red)}
+.card .icon-blue {background:var(--blue-bg) }.card .icon-blue  svg{fill:var(--blue)}
+.card .icon-gray {background:var(--gray-bg) }.card .icon-gray  svg{fill:var(--gray)}
+.card .body{flex:1;min-width:0}
+.card .body .num{font-size:26px;font-weight:600;font-family:var(--mono);line-height:1;color:var(--fg)}
+.card .body .lbl{font-size:12px;color:var(--fg-mute);margin-top:4px}
+.card .body .sub{font-size:11px;color:var(--fg-dim);margin-top:6px;font-family:var(--mono)}
+
+/* info grid */
+.info-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:0;background:var(--bg-card);border:1px solid var(--border);border-radius:6px;overflow:hidden}
+.info-grid > div{padding:14px 18px;border-right:1px solid var(--border);border-bottom:1px solid var(--border)}
+.info-grid > div:last-child{border-right:none}
+.info-grid dt{font-size:11px;color:var(--fg-mute);text-transform:uppercase;letter-spacing:.4px;margin:0 0 4px}
+.info-grid dd{margin:0;font-family:var(--mono);font-size:13px;color:var(--fg);word-break:break-all}
+
+/* table */
+table{width:100%;border-collapse:collapse;background:var(--bg-card);border:1px solid var(--border);border-radius:6px;overflow:hidden;font-size:13px}
+thead th{background:var(--bg-card-2);color:var(--fg);font-weight:600;text-align:left;padding:10px 14px;border-bottom:1px solid var(--border);font-size:12px;text-transform:uppercase;letter-spacing:.3px}
+tbody td{padding:9px 14px;border-bottom:1px solid var(--border);font-family:var(--mono);font-size:12.5px;vertical-align:middle}
+tbody tr:nth-child(2n){background:rgba(255,255,255,.015)}
+tbody tr:hover{background:rgba(88,166,255,.05)}
+tbody tr:last-child td{border-bottom:none}
+td.num,th.num{text-align:right;font-variant-numeric:tabular-nums}
+td.w{font-family:var(--sans);font-size:13px}
+
+/* badge */
+.badge{display:inline-block;padding:2px 8px;border-radius:10px;font-size:11px;font-weight:600;font-family:var(--mono);letter-spacing:.3px;line-height:1.5;border:1px solid transparent}
+.badge-green{background:var(--green-bg);color:var(--green);border-color:rgba(63,185,80,.3)}
+.badge-amber{background:var(--amber-bg);color:var(--amber);border-color:rgba(210,153,34,.3)}
+.badge-red  {background:var(--red-bg);  color:var(--red);  border-color:rgba(248,81,73,.3)}
+.badge-gray {background:var(--gray-bg); color:var(--fg-mute);border-color:rgba(110,118,129,.3)}
+.badge-blue {background:var(--blue-bg); color:var(--blue); border-color:rgba(88,166,255,.3)}
+
+/* progress bar */
+.bar{position:relative;height:6px;background:var(--gray-bg);border-radius:3px;overflow:hidden;width:100%;min-width:80px}
+.bar > i{display:block;height:100%;background:var(--green);transition:none}
+.bar.amber > i{background:var(--amber)}
+.bar.red > i{background:var(--red)}
+
+/* findings */
+.findings{display:grid;grid-template-columns:repeat(3,1fr);gap:14px}
+.find-col{background:var(--bg-card);border:1px solid var(--border);border-radius:6px;padding:18px}
+.find-col h3{margin:0 0 12px;font-size:13px;font-weight:600;color:var(--fg);display:flex;align-items:center;gap:8px;padding-bottom:8px;border-bottom:1px solid var(--border)}
+.find-col h3 .dot{width:8px;height:8px;border-radius:50%}
+.find-col.short h3 .dot{background:var(--red)}
+.find-col.mid   h3 .dot{background:var(--amber)}
+.find-col.long  h3 .dot{background:var(--blue)}
+.find-col ul{margin:0;padding:0;list-style:none}
+.find-col li{padding:8px 0;border-bottom:1px dashed var(--border);font-size:12.5px;color:var(--fg);line-height:1.5}
+.find-col li:last-child{border-bottom:none}
+.find-col li .area{font-family:var(--mono);font-size:11px;color:var(--fg-mute);text-transform:uppercase;letter-spacing:.3px;display:block;margin-bottom:2px}
+.find-col .empty{color:var(--fg-dim);font-style:italic;font-size:12.5px}
+
+/* disclaimer */
+.disclaimer{background:var(--bg-card-2);border:1px solid var(--border);border-left:3px solid var(--gray);border-radius:6px;padding:20px 24px;color:var(--fg-mute);font-size:12.5px;line-height:1.7}
+.disclaimer h3{margin:0 0 8px;color:var(--fg);font-size:13px;font-weight:600}
+
+/* footer */
+footer{text-align:center;color:var(--fg-dim);font-size:11px;font-family:var(--mono);margin-top:40px;padding-top:20px;border-top:1px solid var(--border)}
+
+/* misc */
+.k{color:var(--fg-mute)}
+.muted{color:var(--fg-mute)}
+.right{text-align:right}
+.nowrap{white-space:nowrap}
+.kbd{font-family:var(--mono);font-size:11px;padding:1px 6px;background:var(--bg-card-2);border:1px solid var(--border);border-radius:3px}
+
+/* print */
+@media print{
+  .sidebar{display:none}
+  .main{margin-left:0;max-width:none;padding:20px}
+  body{background:#fff;color:#000}
+  .card,.banner,.info-grid,table,.find-col,.disclaimer{background:#fff;border-color:#ccc;color:#000}
+  thead th{background:#f3f3f3;color:#000}
+  section h2{color:#000}
+}</style>
+</head>
+<body>
+<aside class="sidebar">
+  <div class="brand">
+    <div class='logo'><svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path fill="#58a6ff" d="M3 3h6v6H3zM15 3h6v6h-6zM3 15h6v6H3zM15 15h6v6h-6z"/><path fill="#3fb950" d="M11 11h2v2h-2z"/></svg><div><div class='name'>vCenter Inspect</div><div class='sub'>v1.0</div></div></div>
+  </div>
+  <nav>
+    <a href='#sec-overview'><span class='num'>1.</span><span>vCenter 概览</span></a>
+    <a href='#sec-health'><span class='num'>2.</span><span>Appliance 健康</span></a>
+    <a href='#sec-network'><span class='num'>3.</span><span>网络与 DNS</span></a>
+    <a href='#sec-ntp'><span class='num'>4.</span><span>NTP 与时间</span></a>
+    <a href='#sec-access'><span class='num'>5.</span><span>访问入口</span></a>
+    <a href='#sec-cert'><span class='num'>6.</span><span>证书有效期</span></a>
+    <a href='#sec-backup'><span class='num'>7.</span><span>备份策略</span></a>
+    <a href='#sec-topo'><span class='num'>8.</span><span>Datacenter 与拓扑</span></a>
+    <a href='#sec-hosts'><span class='num'>9.</span><span>ESXi 主机</span></a>
+    <a href='#sec-ds'><span class='num'>10.</span><span>Datastore</span></a>
+    <a href='#sec-net'><span class='num'>11.</span><span>网络</span></a>
+    <a href='#sec-vm-sum'><span class='num'>12.</span><span>VM 总览</span></a>
+    <a href='#sec-vm-list'><span class='num'>13.</span><span>VM 列表</span></a>
+    <a href='#sec-tools'><span class='num'>14.</span><span>VMware Tools 抽样</span></a>
+    <a href='#sec-services'><span class='num'>15.</span><span>Appliance 服务</span></a>
+    <a href='#sec-find'><span class='num'>16.</span><span>总体建议</span></a>
+    <a href='#sec-discl'><span class='num'>17.</span><span>免责声明</span></a>
+  </nav>
+</aside>
+<main class="main">
+<div class="banner">
+  <span class="tag">VCENTER 巡检</span>
+  <h1>VMware vCenter Server — 10.0.0.20</h1>
+  <div class="sub">8.0.3.00600  build 24853646 &nbsp;·&nbsp; release July 29, 2025 &nbsp;·&nbsp; total findings: <span class="badge badge-amber">警告</span></div>
+  <dl class="meta">
+    <div><dt>目标</dt><dd>10.0.0.20</dd></div>
+    <div><dt>采集账号</dt><dd>administrator@vsphere.local</dd></div>
+    <div><dt>报告生成</dt><dd>2026-05-25 11:49:21 +08:00</dd></div>
+    <div><dt>vCenter 版本</dt><dd>8.0.3.00600  build 24853646</dd></div>
+    <div><dt>vCenter 时间</dt><dd>Mon 05-25-2026 03:49:39 AM (UTC)</dd></div>
+    <div><dt>安装时间</dt><dd>2025-10-13T04:18:28.279Z</dd></div>
+  </dl>
+</div>
+<div class="cards">
+  <div class="card">
+    <div class="icon icon-blue"><svg viewBox="0 0 24 24"><path d="M6 2a4 4 0 100 8 4 4 0 000-8zm12 0a4 4 0 100 8 4 4 0 000-8zM6 14a4 4 0 100 8 4 4 0 000-8zm12 0a4 4 0 100 8 4 4 0 000-8z"/></svg></div>
+    <div class="body"><div class="num">2</div><div class="lbl">ESXi 主机</div><div class="sub">1 集群</div></div>
+  </div>
+  <div class="card">
+    <div class="icon icon-blue"><svg viewBox="0 0 24 24"><path d="M3 3h18v6H3zm0 8h18v6H3zm0 8h18v2H3zM6 5v2h2V5zm0 8v2h2v-2z"/></svg></div>
+    <div class="body"><div class="num">33</div><div class="lbl">VM 总数</div><div class="sub">开机 11 / 关机 22 / 挂起 0</div></div>
+  </div>
+  <div class="card">
+    <div class="icon icon-blue"><svg viewBox="0 0 24 24"><path d="M12 2C6.48 2 3 4.24 3 6v12c0 1.76 3.48 4 9 4s9-2.24 9-4V6c0-1.76-3.48-4-9-4zm0 18c-4.42 0-7-1.74-7-2v-1.41A12.69 12.69 0 0012 18a12.69 12.69 0 007-1.41V18c0 .26-2.58 2-7 2zm0-4c-4.42 0-7-1.74-7-2v-1.41A12.69 12.69 0 0012 14a12.69 12.69 0 007-1.41V14c0 .26-2.58 2-7 2zm0-4c-4.42 0-7-1.74-7-2V8.59A12.69 12.69 0 0012 10a12.69 12.69 0 007-1.41V10c0 .26-2.58 2-7 2zm0-4c-4.42 0-7-1.74-7-2s2.58-2 7-2 7 1.74 7 2-2.58 2-7 2z"/></svg></div>
+    <div class="body"><div class="num">6</div><div class="lbl">Datastore</div><div class="sub">103.22 TB 总容量</div></div>
+  </div>
+  <div class="card">
+    <div class="icon icon-blue"><svg viewBox="0 0 24 24"><path d="M12 4l8 4-8 4-8-4 8-4zm0 6l8 4-8 4-8-4 8-4zm0 6l8 4-8 4-8-4 8-4z"/></svg></div>
+    <div class="body"><div class="num">8</div><div class="lbl">Port Group</div><div class="sub"></div></div>
+  </div>
+  <div class="card">
+    <div class="icon icon-amber"><svg viewBox="0 0 24 24"><path d="M1 21h22L12 2 1 21zm12-3h-2v-2h2v2zm0-4h-2v-4h2v4z"/></svg></div>
+    <div class="body"><div class="num">9</div><div class="lbl">Findings</div><div class="sub">严重 0 / 警告 5 / 提示 4</div></div>
+  </div>
+  <div class="card">
+    <div class="icon icon-gray"><svg viewBox="0 0 24 24"><path d="M12 2a10 10 0 100 20 10 10 0 000-20zm0 18a8 8 0 110-16 8 8 0 010 16zm.5-13H11v6l5.2 3.2.8-1.3-4.5-2.7V7z"/></svg></div>
+    <div class="body"><div class="num">134</div><div class="lbl">Uptime (天)</div><div class="sub">134 天 11 小时</div></div>
+  </div>
+</div>
+<section id="sec-overview">
+  <h2><span class="num">1</span>vCenter 概览<span class="lbl">/api/appliance/system/version</span></h2>
+  <div class="info-grid">
+    <div><dt>产品</dt><dd>VMware vCenter Server</dd></div>
+    <div><dt>版本</dt><dd>8.0.3.00600</dd></div>
+    <div><dt>Build</dt><dd>24853646</dd></div>
+    <div><dt>发布日期</dt><dd>July 29, 2025</dd></div>
+    <div><dt>部署形态</dt><dd>vCenter Server with an embedded Platform Services Controller</dd></div>
+    <div><dt>Summary</dt><dd>Patch for VMware vCenter Server 8.0</dd></div>
+    <div><dt>安装时间</dt><dd>2025-10-13T04:18:28.279Z</dd></div>
+    <div><dt>Uptime</dt><dd>134 天 11 小时 <span class="muted">(11620690 s)</span></dd></div>
+    <div><dt>vCenter 当前时间</dt><dd>Mon 05-25-2026 03:49:39 AM (UTC)</dd></div>
+    <div><dt>报告生成时间</dt><dd>2026-05-25 11:49:21</dd></div>
+    <div><dt>补丁状态</dt><dd><span class='badge badge-green'>UP_TO_DATE</span> <span class="muted">last check 2026-05-25T03:13:29.410Z</span></dd></div>
+    <div><dt>整体评估</dt><dd><span class='badge badge-amber'>警告</span> &nbsp; <span class='badge badge-red'>严重 0</span> <span class='badge badge-amber'>警告 5</span> <span class='badge badge-blue'>提示 4</span></dd></div>
+  </div>
+</section>
+<section id="sec-health">
+  <h2><span class="num">2</span>Appliance 健康<span class="lbl">/api/appliance/health/*</span></h2>
+  <div class="info-grid">
+    <div><dt>System</dt>           <dd><span class='badge badge-green'>GREEN</span></dd></div>
+    <div><dt>Storage</dt>          <dd><span class='badge badge-green'>GREEN</span></dd></div>
+    <div><dt>Memory</dt>           <dd><span class='badge badge-green'>GREEN</span></dd></div>
+    <div><dt>Swap</dt>             <dd><span class='badge badge-green'>GREEN</span></dd></div>
+    <div><dt>Load</dt>             <dd><span class='badge badge-green'>GREEN</span></dd></div>
+    <div><dt>Database Storage</dt> <dd><span class='badge badge-green'>GREEN</span></dd></div>
+    <div><dt>Applmgmt</dt>         <dd><span class='badge badge-green'>GREEN</span></dd></div>
+    <div><dt>Software Packages</dt><dd><span class='badge badge-green'>GREEN</span></dd></div>
+    <div><dt>Last Check</dt>       <dd>2026-05-25T03:49:39.886Z</dd></div>
+  </div>
+  <p class="muted" style="margin-top:10px;font-size:12px">注: GREEN = 正常, YELLOW/ORANGE = 警告, RED = 严重; 明细可在 VAMI (https://) 查看。</p>
+</section>
+<section id="sec-network">
+  <h2><span class="num">3</span>网络与 DNS<span class="lbl">/api/appliance/networking</span></h2>
+  <div class="info-grid" style="margin-bottom:14px">
+    <div><dt>Hostname</dt><dd><span class='badge badge-amber'>localhost</span></dd></div>
+    <div><dt>DNS 模式</dt><dd>STATIC</dd></div>
+    <div><dt>DNS 服务器</dt><dd>10.0.0.254</dd></div>
+    <div><dt>vCenter Base URL</dt><dd>https://10.0.0.20:443</dd></div>
+  </div>
+  <table>
+    <thead><tr><th>网卡</th><th>MAC</th><th>状态</th><th>模式</th><th>IPv4</th><th>网关</th></tr></thead>
+    <tbody>    <tr>
+      <td>nic0</td>
+      <td>00:50:56:aa:11:22</td>
+      <td><span class='badge badge-green'>up</span></td>
+      <td>STATIC</td>
+      <td>10.0.0.20/24</td>
+      <td>10.0.0.254</td>
+    </tr></tbody>
+  </table>
+</section>
+<section id="sec-ntp">
+  <h2><span class="num">4</span>NTP 与时间同步<span class="lbl">/api/appliance/ntp · /timesync</span></h2>
+  <div class="info-grid">
+    <div><dt>NTP 服务器</dt><dd><span class='badge badge-green'>count=1</span> &nbsp; </dd></div>
+    <div><dt>Timesync 模式</dt><dd><span class='badge badge-amber'>DISABLED</span></dd></div>
+    <div><dt>vCenter 时间</dt><dd>Mon 05-25-2026 03:49:39 AM (UTC)</dd></div>
+    <div><dt>本机时间</dt><dd>2026-05-25 11:49:21 +08:00</dd></div>
+  </div>
+  <p class="muted" style="margin-top:10px;font-size:12px">说明: vCenter 与 ESXi 必须保持时间同步, 否则会导致 SSO 异常、证书校验失败、备份恢复时戳错乱。推荐 timesync = NTP, 至少 2 个上游源。</p>
+</section>
+<section id="sec-access">
+  <h2><span class="num">5</span>访问入口<span class="lbl">/api/appliance/access/*</span></h2>
+  <div class="info-grid">
+    <div><dt>SSH</dt><dd><span class='badge badge-amber'>enabled</span></dd></div>
+    <div><dt>Bash Shell</dt><dd><span class='badge badge-green'>disabled</span></dd></div>
+    <div><dt>DCUI</dt><dd><span class='badge badge-amber'>enabled</span></dd></div>
+    <div><dt>Console CLI</dt><dd><span class='badge badge-amber'>enabled</span></dd></div>
+  </div>
+  <p class="muted" style="margin-top:10px;font-size:12px">建议: 生产环境默认关闭 SSH 与 Bash Shell, 仅在排错时临时启用; DCUI 用于本机控制台救援, 远程纯运维环境可关闭。</p>
+</section>
+<section id="sec-cert">
+  <h2><span class="num">6</span>vCenter TLS 证书<span class="lbl">/api/vcenter/certificate-management/vcenter/tls</span></h2>
+  <div class="info-grid">
+    <div><dt>剩余有效期</dt><dd><span class='badge badge-green'>507 天</span></dd></div>
+    <div><dt>有效期始</dt><dd>2025-10-13T04:02:18.000Z</dd></div>
+    <div><dt>有效期止</dt><dd>2027-10-13T16:02:18.000Z</dd></div>
+    <div><dt>颁发者</dt><dd>OU=VMware Engineering, O=localhost, ST=California, C=US, DC=local, DC=vsphere, CN=CA</dd></div>
+    <div><dt>主题</dt><dd>C=US, CN=10.0.0.20</dd></div>
+    <div><dt>SAN</dt><dd>10.0.0.20</dd></div>
+    <div><dt>签名算法</dt><dd>SHA256WITHRSA</dd></div>
+    <div><dt>指纹 (SHA1)</dt><dd>46FD20B4203CE3E561AB44C29BF38C563D1136EF</dd></div>
+  </div>
+</section>
+<section id="sec-backup">
+  <h2><span class="num">7</span>VAMI 备份策略<span class="lbl">/api/appliance/recovery/backup/*</span></h2>
+  <div class="info-grid">
+    <div><dt>备份计划数</dt><dd><span class='badge badge-red'>0</span></dd></div>
+    <div><dt>历史备份任务数</dt><dd><span class='badge badge-green'>1</span></dd></div>
+    <div><dt>状态</dt><dd><span class='badge badge-green'>已配置</span></dd></div>
+  </div>
+  <p class="muted" style="margin-top:10px;font-size:12px">建议: 在 VAMI (https://) → Backup 配置 SFTP/NFS/SMB 周期备份, 至少每周一次, 保留 ≥ 3 份。</p>
+</section>
+<section id="sec-topo">
+  <h2><span class="num">8</span>Datacenter / Cluster / Folder<span class="lbl">/api/vcenter/{datacenter,cluster,folder,resource-pool}</span></h2>
+  <table>
+    <thead><tr><th style="width:140px">类型</th><th>名称</th><th>对象 ID / 属性</th></tr></thead>
+    <tbody><tr><td><b>Datacenter</b></td><td>Datacenter</td><td>datacenter-3</td></tr><tr><td><b>Cluster</b></td><td>Cloud</td><td>domain-c10 &nbsp; HA: <span class='badge badge-amber'>disabled</span> &nbsp; DRS: <span class='badge badge-amber'>disabled</span></td></tr><tr><td>Folder (DATACENTER)</td><td>Datacenters</td><td>group-d1</td></tr><tr><td>Folder (HOST)</td><td>host</td><td>group-h5</td></tr><tr><td>Folder (NETWORK)</td><td>network</td><td>group-n7</td></tr><tr><td>Folder (DATASTORE)</td><td>datastore</td><td>group-s6</td></tr><tr><td>Folder (VIRTUAL_MACHINE)</td><td>Discovered virtual machine</td><td>group-v12</td></tr><tr><td>Folder (VIRTUAL_MACHINE)</td><td>vm</td><td>group-v4</td></tr><tr><td>Folder (VIRTUAL_MACHINE)</td><td>【1】-Production</td><td>group-v55</td></tr><tr><td>Folder (VIRTUAL_MACHINE)</td><td>【2】-Cloud</td><td>group-v56</td></tr><tr><td>Folder (VIRTUAL_MACHINE)</td><td>【3】-Mgmt</td><td>group-v57</td></tr><tr><td>Folder (VIRTUAL_MACHINE)</td><td>【4】-Others</td><td>group-v58</td></tr><tr><td>Folder (VIRTUAL_MACHINE)</td><td>vCLS</td><td>group-v8</td></tr><tr><td>ResourcePool</td><td>Resources</td><td>resgroup-11</td></tr></tbody>
+  </table>
+</section>
+<section id="sec-hosts">
+  <h2><span class="num">9</span>ESXi 主机<span class="lbl">/api/vcenter/host</span></h2>
+  <table>
+    <thead><tr><th>Host ID</th><th>名称 / IP</th><th>连接状态</th><th>电源状态</th></tr></thead>
+    <tbody>    <tr>
+      <td>host-13</td>
+      <td>10.0.0.17</td>
+      <td><span class='badge badge-green'>CONNECTED</span></td>
+      <td><span class='badge badge-green'>POWERED_ON</span></td>
+    </tr>    <tr>
+      <td>host-15</td>
+      <td>10.0.0.19</td>
+      <td><span class='badge badge-green'>CONNECTED</span></td>
+      <td><span class='badge badge-green'>POWERED_ON</span></td>
+    </tr></tbody>
+  </table>
+  <p class="muted" style="margin-top:10px;font-size:12px">说明: REST API 8.0 单 host 详细信息端点 (CPU/Mem/Build/Uptime/Maintenance) 已 deprecated, 如需深入采集请使用 PowerCLI 或 vSphere SDK (vmodl)。</p>
+</section>
+<section id="sec-ds">
+  <h2><span class="num">10</span>Datastore<span class="lbl">/api/vcenter/datastore</span></h2>
+  <div class="info-grid" style="margin-bottom:14px">
+    <div><dt>Datastore 数</dt><dd>6</dd></div>
+    <div><dt>总容量</dt><dd>103.22 TB</dd></div>
+    <div><dt>已用</dt><dd>4.48 TB</dd></div>
+    <div><dt>空闲</dt><dd>98.74 TB</dd></div>
+    <div><dt>整体使用率</dt><dd>4.3 %</dd></div>
+  </div>
+  <table>
+    <thead><tr><th>名称</th><th>类型</th><th class="num">容量</th><th class="num">空闲</th><th class="num">已用</th><th class="num">使用率</th><th>占比</th></tr></thead>
+    <tbody>    <tr>
+      <td>ESXi-02</td>
+      <td>VMFS</td>
+      <td class="num">319.00 GB</td>
+      <td class="num">249.84 GB</td>
+      <td class="num">69.16 GB</td>
+      <td class="num">21.7 %</td>
+      <td style="width:140px"><div class="bar green"><i style="width:21.7%"></i></div></td>
+    </tr>    <tr>
+      <td>HDD</td>
+      <td>VMFS</td>
+      <td class="num">49.11 TB</td>
+      <td class="num">48.82 TB</td>
+      <td class="num">298.78 GB</td>
+      <td class="num">0.6 %</td>
+      <td style="width:140px"><div class="bar green"><i style="width:0.6%"></i></div></td>
+    </tr>    <tr>
+      <td>SSD-NVME</td>
+      <td>VMFS</td>
+      <td class="num">20.96 TB</td>
+      <td class="num">18.42 TB</td>
+      <td class="num">2.54 TB</td>
+      <td class="num">12.1 %</td>
+      <td style="width:140px"><div class="bar green"><i style="width:12.1%"></i></div></td>
+    </tr>    <tr>
+      <td>Data</td>
+      <td>VMFS</td>
+      <td class="num">94.25 GB</td>
+      <td class="num">28.71 GB</td>
+      <td class="num">65.54 GB</td>
+      <td class="num">69.5 %</td>
+      <td style="width:140px"><div class="bar green"><i style="width:69.5%"></i></div></td>
+    </tr>    <tr>
+      <td>Datastore</td>
+      <td>VMFS</td>
+      <td class="num">16.37 TB</td>
+      <td class="num">15.68 TB</td>
+      <td class="num">712.08 GB</td>
+      <td class="num">4.2 %</td>
+      <td style="width:140px"><div class="bar green"><i style="width:4.2%"></i></div></td>
+    </tr>    <tr>
+      <td>BackupData</td>
+      <td>VMFS</td>
+      <td class="num">16.37 TB</td>
+      <td class="num">15.55 TB</td>
+      <td class="num">836.82 GB</td>
+      <td class="num">5 %</td>
+      <td style="width:140px"><div class="bar green"><i style="width:5%"></i></div></td>
+    </tr></tbody>
+  </table>
+</section>
+<section id="sec-net">
+  <h2><span class="num">11</span>网络 / Portgroup<span class="lbl">/api/vcenter/network</span></h2>
+  <div class="info-grid" style="margin-bottom:14px">
+    <div><dt>Portgroup 总数</dt><dd>8</dd></div>
+    <div><dt>Standard Portgroup</dt><dd>8</dd></div>
+    <div><dt>Distributed Portgroup</dt><dd>0</dd></div>
+  </div>
+  <table>
+    <thead><tr><th>名称</th><th>类型</th><th>网络 ID</th></tr></thead>
+    <tbody><tr><td>100</td><td>STANDARD_PORTGROUP</td><td>network-2070</td></tr><tr><td>vlan100</td><td>STANDARD_PORTGROUP</td><td>network-25</td></tr><tr><td>pg-vlan101</td><td>STANDARD_PORTGROUP</td><td>network-24</td></tr><tr><td>1200</td><td>STANDARD_PORTGROUP</td><td>network-2067</td></tr><tr><td>vlan102</td><td>STANDARD_PORTGROUP</td><td>network-23</td></tr><tr><td>512</td><td>STANDARD_PORTGROUP</td><td>network-2071</td></tr><tr><td>port-mirror</td><td>STANDARD_PORTGROUP</td><td>network-2066</td></tr><tr><td>VM Network</td><td>STANDARD_PORTGROUP</td><td>network-22</td></tr></tbody>
+  </table>
+</section>
+<section id="sec-vm-sum">
+  <h2><span class="num">12</span>虚拟机总览<span class="lbl">/api/vcenter/vm</span></h2>
+  <div class="info-grid">
+    <div><dt>VM 总数</dt><dd>33</dd></div>
+    <div><dt>开机</dt><dd><span class='badge badge-green'>11</span></dd></div>
+    <div><dt>关机</dt><dd><span class='badge badge-gray'>22</span></dd></div>
+    <div><dt>挂起</dt><dd><span class='badge badge-amber'>0</span></dd></div>
+    <div><dt>vCPU 总配额 (全部)</dt><dd>279</dd></div>
+    <div><dt>vCPU (开机)</dt><dd>117</dd></div>
+    <div><dt>内存总配额 (全部)</dt><dd>722.16 GB</dd></div>
+    <div><dt>内存 (开机)</dt><dd>380.16 GB</dd></div>
+  </div>
+</section>
+<section id="sec-vm-list">
+  <h2><span class="num">13</span>VM 列表<span class="lbl">共 33 台 · 按电源 + vCPU 排序</span></h2>
+  <table>
+    <thead><tr><th>名称</th><th>VM ID</th><th>电源</th><th class="num">vCPU</th><th class="num">内存</th></tr></thead>
+    <tbody>    <tr>
+      <td class="w">centos-app-01-10.0.0.11</td>
+      <td>vm-29</td>
+      <td><span class='badge badge-green'>POWERED_ON</span></td>
+      <td class="num">32</td>
+      <td class="num">196.00 GB</td>
+    </tr>    <tr>
+      <td class="w">centos-app-02-10.0.0.12</td>
+      <td>vm-39</td>
+      <td><span class='badge badge-green'>POWERED_ON</span></td>
+      <td class="num">24</td>
+      <td class="num">96.00 GB</td>
+    </tr>    <tr>
+      <td class="w">k8s-node-01-10.0.0.23</td>
+      <td>vm-36</td>
+      <td><span class='badge badge-green'>POWERED_ON</span></td>
+      <td class="num">16</td>
+      <td class="num">32.00 GB</td>
+    </tr>    <tr>
+      <td class="w">wg-gw-10.0.0.254</td>
+      <td>vm-37</td>
+      <td><span class='badge badge-green'>POWERED_ON</span></td>
+      <td class="num">16</td>
+      <td class="num">16.00 GB</td>
+    </tr>    <tr>
+      <td class="w">vpn-gw-10.0.0.21</td>
+      <td>vm-28</td>
+      <td><span class='badge badge-green'>POWERED_ON</span></td>
+      <td class="num">8</td>
+      <td class="num">8.00 GB</td>
+    </tr>    <tr>
+      <td class="w">vdi-monitor-10.0.0.25</td>
+      <td>vm-566</td>
+      <td><span class='badge badge-green'>POWERED_ON</span></td>
+      <td class="num">6</td>
+      <td class="num">6.00 GB</td>
+    </tr>    <tr>
+      <td class="w">ad-02-10.0.20.253</td>
+      <td>vm-607</td>
+      <td><span class='badge badge-green'>POWERED_ON</span></td>
+      <td class="num">4</td>
+      <td class="num">4.00 GB</td>
+    </tr>    <tr>
+      <td class="w">k8s-master-01-10.0.0.22</td>
+      <td>vm-35</td>
+      <td><span class='badge badge-green'>POWERED_ON</span></td>
+      <td class="num">4</td>
+      <td class="num">4.00 GB</td>
+    </tr>    <tr>
+      <td class="w">mail-01</td>
+      <td>vm-2138</td>
+      <td><span class='badge badge-green'>POWERED_ON</span></td>
+      <td class="num">4</td>
+      <td class="num">4.00 GB</td>
+    </tr>    <tr>
+      <td class="w">vcenter-01-10.0.0.20</td>
+      <td>vm-41</td>
+      <td><span class='badge badge-green'>POWERED_ON</span></td>
+      <td class="num">2</td>
+      <td class="num">14.00 GB</td>
+    </tr>    <tr>
+      <td class="w">vCLS-11111111-2222-3333-4444-555555555555</td>
+      <td>vm-47</td>
+      <td><span class='badge badge-green'>POWERED_ON</span></td>
+      <td class="num">1</td>
+      <td class="num">160.00 MB</td>
+    </tr>    <tr>
+      <td class="w">centos-app-04-10.0.0.14</td>
+      <td>vm-53</td>
+      <td><span class='badge badge-gray'>POWERED_OFF</span></td>
+      <td class="num">32</td>
+      <td class="num">96.00 GB</td>
+    </tr>    <tr>
+      <td class="w">centos-app-03-10.0.0.13</td>
+      <td>vm-32</td>
+      <td><span class='badge badge-gray'>POWERED_OFF</span></td>
+      <td class="num">24</td>
+      <td class="num">96.00 GB</td>
+    </tr>    <tr>
+      <td class="w">backup-01-10.0.0.24</td>
+      <td>vm-52</td>
+      <td><span class='badge badge-gray'>POWERED_OFF</span></td>
+      <td class="num">16</td>
+      <td class="num">16.00 GB</td>
+    </tr>    <tr>
+      <td class="w">vdi-mgmt-bridge</td>
+      <td>vm-54</td>
+      <td><span class='badge badge-gray'>POWERED_OFF</span></td>
+      <td class="num">8</td>
+      <td class="num">8.00 GB</td>
+    </tr>    <tr>
+      <td class="w">bastion-01</td>
+      <td>vm-352</td>
+      <td><span class='badge badge-gray'>POWERED_OFF</span></td>
+      <td class="num">8</td>
+      <td class="num">8.00 GB</td>
+    </tr>    <tr>
+      <td class="w">mirror-switch</td>
+      <td>vm-2054</td>
+      <td><span class='badge badge-gray'>POWERED_OFF</span></td>
+      <td class="num">8</td>
+      <td class="num">8.00 GB</td>
+    </tr>    <tr>
+      <td class="w">win11-test</td>
+      <td>vm-59</td>
+      <td><span class='badge badge-gray'>POWERED_OFF</span></td>
+      <td class="num">8</td>
+      <td class="num">8.00 GB</td>
+    </tr>    <tr>
+      <td class="w">iKuai</td>
+      <td>vm-604</td>
+      <td><span class='badge badge-gray'>POWERED_OFF</span></td>
+      <td class="num">6</td>
+      <td class="num">6.00 GB</td>
+    </tr>    <tr>
+      <td class="w">app-test-01</td>
+      <td>vm-33</td>
+      <td><span class='badge badge-gray'>POWERED_OFF</span></td>
+      <td class="num">4</td>
+      <td class="num">16.00 GB</td>
+    </tr>    <tr>
+      <td class="w">ad-01-10.0.0.4</td>
+      <td>vm-31</td>
+      <td><span class='badge badge-gray'>POWERED_OFF</span></td>
+      <td class="num">4</td>
+      <td class="num">4.00 GB</td>
+    </tr>    <tr>
+      <td class="w">vdi-ddc-01-10.0.20.252</td>
+      <td>vm-608</td>
+      <td><span class='badge badge-gray'>POWERED_OFF</span></td>
+      <td class="num">4</td>
+      <td class="num">8.00 GB</td>
+    </tr>    <tr>
+      <td class="w">cloud-win11-01</td>
+      <td>vm-50</td>
+      <td><span class='badge badge-gray'>POWERED_OFF</span></td>
+      <td class="num">4</td>
+      <td class="num">4.00 GB</td>
+    </tr>    <tr>
+      <td class="w">cloud-winsrv-01</td>
+      <td>vm-51</td>
+      <td><span class='badge badge-gray'>POWERED_OFF</span></td>
+      <td class="num">4</td>
+      <td class="num">4.00 GB</td>
+    </tr>    <tr>
+      <td class="w">bastion-dev-01</td>
+      <td>vm-500</td>
+      <td><span class='badge badge-gray'>POWERED_OFF</span></td>
+      <td class="num">4</td>
+      <td class="num">4.00 GB</td>
+    </tr>    <tr>
+      <td class="w">app-test-02</td>
+      <td>vm-1008</td>
+      <td><span class='badge badge-gray'>POWERED_OFF</span></td>
+      <td class="num">4</td>
+      <td class="num">16.00 GB</td>
+    </tr>    <tr>
+      <td class="w">license-server</td>
+      <td>vm-2154</td>
+      <td><span class='badge badge-gray'>POWERED_OFF</span></td>
+      <td class="num">4</td>
+      <td class="num">8.00 GB</td>
+    </tr>    <tr>
+      <td class="w">nls-archive-01</td>
+      <td>vm-614</td>
+      <td><span class='badge badge-gray'>POWERED_OFF</span></td>
+      <td class="num">4</td>
+      <td class="num">8.00 GB</td>
+    </tr>    <tr>
+      <td class="w">nls-02</td>
+      <td>vm-2151</td>
+      <td><span class='badge badge-gray'>POWERED_OFF</span></td>
+      <td class="num">4</td>
+      <td class="num">8.00 GB</td>
+    </tr>    <tr>
+      <td class="w">vdi-master-01</td>
+      <td>vm-782</td>
+      <td><span class='badge badge-gray'>POWERED_OFF</span></td>
+      <td class="num">4</td>
+      <td class="num">6.00 GB</td>
+    </tr>    <tr>
+      <td class="w">ubuntu-2404-02</td>
+      <td>vm-49</td>
+      <td><span class='badge badge-gray'>POWERED_OFF</span></td>
+      <td class="num">4</td>
+      <td class="num">4.00 GB</td>
+    </tr>    <tr>
+      <td class="w">netscaler-01-10.0.20.249</td>
+      <td>vm-609</td>
+      <td><span class='badge badge-gray'>POWERED_OFF</span></td>
+      <td class="num">2</td>
+      <td class="num">2.00 GB</td>
+    </tr>    <tr>
+      <td class="w">winsrv2019-test</td>
+      <td>vm-27</td>
+      <td><span class='badge badge-gray'>POWERED_OFF</span></td>
+      <td class="num">2</td>
+      <td class="num">4.00 GB</td>
+    </tr></tbody>
+  </table>
+</section>
+<section id="sec-tools">
+  <h2><span class="num">14</span>VMware Tools 抽样<span class="lbl">/api/vcenter/vm/{vm}/tools · 样本大小 11</span></h2>
+  <table>
+    <thead><tr><th>VM</th><th>运行</th><th>版本</th><th>状态</th><th>类型</th><th>策略</th></tr></thead>
+    <tbody>    <tr>
+      <td class="w">mail-01</td>
+      <td><span class='badge badge-green'>RUNNING</span></td>
+      <td>12421</td>
+      <td><span class='badge badge-green'>CURRENT</span></td>
+      <td>MSI</td>
+      <td>MANUAL</td>
+    </tr>    <tr>
+      <td class="w">vpn-gw-10.0.0.21</td>
+      <td><span class='badge badge-green'>RUNNING</span></td>
+      <td>12448</td>
+      <td><span class='badge badge-blue'>UNMANAGED</span></td>
+      <td>OPEN_VM_TOOLS</td>
+      <td>MANUAL</td>
+    </tr>    <tr>
+      <td class="w">centos-app-01-10.0.0.11</td>
+      <td><span class='badge badge-green'>RUNNING</span></td>
+      <td>13312</td>
+      <td><span class='badge badge-blue'>UNMANAGED</span></td>
+      <td>OPEN_VM_TOOLS</td>
+      <td>MANUAL</td>
+    </tr>    <tr>
+      <td class="w">k8s-master-01-10.0.0.22</td>
+      <td><span class='badge badge-green'>RUNNING</span></td>
+      <td>12448</td>
+      <td><span class='badge badge-blue'>UNMANAGED</span></td>
+      <td>OPEN_VM_TOOLS</td>
+      <td>MANUAL</td>
+    </tr>    <tr>
+      <td class="w">k8s-node-01-10.0.0.23</td>
+      <td><span class='badge badge-green'>RUNNING</span></td>
+      <td>12448</td>
+      <td><span class='badge badge-blue'>UNMANAGED</span></td>
+      <td>OPEN_VM_TOOLS</td>
+      <td>MANUAL</td>
+    </tr>    <tr>
+      <td class="w">wg-gw-10.0.0.254</td>
+      <td><span class='badge badge-green'>RUNNING</span></td>
+      <td>12448</td>
+      <td><span class='badge badge-blue'>UNMANAGED</span></td>
+      <td>OPEN_VM_TOOLS</td>
+      <td>MANUAL</td>
+    </tr>    <tr>
+      <td class="w">centos-app-02-10.0.0.12</td>
+      <td><span class='badge badge-green'>RUNNING</span></td>
+      <td>12421</td>
+      <td><span class='badge badge-blue'>UNMANAGED</span></td>
+      <td>OPEN_VM_TOOLS</td>
+      <td>MANUAL</td>
+    </tr>    <tr>
+      <td class="w">vcenter-01-10.0.0.20</td>
+      <td><span class='badge badge-green'>RUNNING</span></td>
+      <td>12448</td>
+      <td><span class='badge badge-blue'>UNMANAGED</span></td>
+      <td>OPEN_VM_TOOLS</td>
+      <td>MANUAL</td>
+    </tr>    <tr>
+      <td class="w">vCLS-11111111-2222-3333-4444-555555555555</td>
+      <td><span class='badge badge-green'>RUNNING</span></td>
+      <td>12389</td>
+      <td><span class='badge badge-blue'>UNMANAGED</span></td>
+      <td>OPEN_VM_TOOLS</td>
+      <td>MANUAL</td>
+    </tr>    <tr>
+      <td class="w">vdi-monitor-10.0.0.25</td>
+      <td><span class='badge badge-green'>RUNNING</span></td>
+      <td>13312</td>
+      <td><span class='badge badge-blue'>UNMANAGED</span></td>
+      <td>OPEN_VM_TOOLS</td>
+      <td>MANUAL</td>
+    </tr>    <tr>
+      <td class="w">ad-02-10.0.20.253</td>
+      <td><span class='badge badge-green'>RUNNING</span></td>
+      <td>12421</td>
+      <td><span class='badge badge-green'>CURRENT</span></td>
+      <td>MSI</td>
+      <td>MANUAL</td>
+    </tr></tbody>
+  </table>
+</section>
+<section id="sec-services">
+  <h2><span class="num">15</span>Appliance 服务<span class="lbl">/api/appliance/services</span></h2>
+  <div class="info-grid" style="margin-bottom:14px">
+    <div><dt>服务总数</dt><dd>109</dd></div>
+    <div><dt>STARTED</dt><dd><span class='badge badge-green'>65</span></dd></div>
+    <div><dt>STOPPED</dt><dd><span class='badge badge-gray'>44</span></dd></div>
+    <div><dt>OTHER</dt><dd><span class='badge badge-amber'>0</span></dd></div>
+  </div>
+  <table>
+    <thead><tr><th style="width:280px">核心服务</th><th>状态</th><th>描述</th></tr></thead>
+    <tbody></tbody>
+  </table>
+  <p class="muted" style="margin-top:10px;font-size:12px">说明: 仅列出核心 vCenter 服务; 完整列表可在 VAMI 或 SSH service-control --list 查看。</p>
+</section>
+<section id="sec-find">
+  <h2><span class="num">16</span>总体建议<span class="lbl">基于本次巡检数据动态生成</span></h2>
+  <div class="findings">
+    <div class="find-col short">
+      <h3><span class="dot"></span>短期 (立即处理 · 严重 0)</h3>
+      <p class='empty'>本次未发现严重问题。</p>
+    </div>
+    <div class="find-col mid">
+      <h3><span class="dot"></span>中期 (1-2 周内 · 警告 5)</h3>
+      <ul><li><span class='area'>[时间同步]</span><b>Timesync 模式 = DISABLED</b><br><span class='muted'>推荐 NTP 模式; HOST/DISABLED 在跨集群迁移或主机时间漂移时可能引发故障</span></li><li><span class='area'>[DNS]</span><b>DNS hostname 仍是 &#39;localhost&#39;</b><br><span class='muted'>建议为 VCSA 配置正式 FQDN, 否则证书 / SSO / 备份恢复均可能异常</span></li><li><span class='area'>[访问]</span><b>SSH 已启用</b><br><span class='muted'>生产环境建议默认关闭, 排错时临时打开后及时关闭</span></li><li><span class='area'>[备份]</span><b>未配置任何备份计划</b><br><span class='muted'>同上</span></li><li><span class='area'>[集群]</span><b>Cluster &#39;Cloud&#39; 未启用 HA</b><br><span class='muted'>≥ 2 节点集群推荐启用 HA 保障 VM 故障迁移</span></li></ul>
+    </div>
+    <div class="find-col long">
+      <h3><span class="dot"></span>长期 (持续改进 · 提示 4)</h3>
+      <ul><li><span class='area'>[DNS]</span><b>DNS 服务器数 = 1</b><br><span class='muted'>生产环境建议 ≥ 2 个 DNS 服务器避免单点</span></li><li><span class='area'>[访问]</span><b>DCUI 已启用</b><br><span class='muted'>DCUI 用于本地控制台紧急恢复, 远程运维场景可关闭</span></li><li><span class='area'>[证书]</span><b>当前 vCenter TLS 证书为自签 (VMSCA / localhost 默认 CA)</b><br><span class='muted'>生产可考虑替换为企业 CA 或公共 CA 签发的证书</span></li><li><span class='area'>[集群]</span><b>Cluster &#39;Cloud&#39; 未启用 DRS</b><br><span class='muted'>推荐启用 DRS 自动均衡负载 (FullyAutomated 或 PartiallyAutomated)</span></li></ul>
+    </div>
+  </div>
+</section>
+<section id="sec-discl">
+  <h2><span class="num">17</span>免责声明<span class="lbl">disclaimer</span></h2>
+  <div class="disclaimer">
+    <h3>关于本报告</h3>
+    <p>本报告由 <b>vcenter_inspect.ps1 v1.0</b> 通过 vCenter REST API (vSphere Automation API) 自动采集生成, 不修改任何 vCenter 配置, 不写入任何文件到 vCenter Appliance。</p>
+    <p><b>REST API 8.0 限制</b>:</p>
+    <ul>
+      <li>单 ESXi 主机详细信息 (CPU/Memory/Build/Uptime/Maintenance Mode) 已 deprecated, 需用 PowerCLI 或 vSphere SDK 补充。</li>
+      <li>VM 快照列表 / 大小、Alarm / Event / 告警历史、License 状态在 8.0 REST 未暴露, 需 vmodl SOAP 接口。</li>
+      <li>性能数据 (CPU/Memory/IOPS 历史曲线) 在 stats API (preview), 字段不稳定, 本版本未采集。</li>
+    </ul>
+    <p>建议结合 VAMI (https://) 与 vSphere Client 手工核对告警明细。本报告中的"总体建议"基于通用最佳实践与本次数据生成, 实际优先级请根据业务场景判断。</p>
+  </div>
+</section>
+<footer>
+  vcenter_inspect.ps1 v1.0 &nbsp;·&nbsp; 采集耗时 3s &nbsp;·&nbsp; 生成于 2026-05-25 11:49:21
+</footer>
+</main>
+<script>
+(function(){
+  var sections = document.querySelectorAll('section[id]');
+  var links = {};
+  document.querySelectorAll('.sidebar nav a').forEach(function(a){
+    links[a.getAttribute('href').slice(1)] = a;
+  });
+  var io = new IntersectionObserver(function(entries){
+    entries.forEach(function(e){
+      var id = e.target.id;
+      if (e.isIntersecting && links[id]) {
+        Object.values(links).forEach(function(x){x.classList.remove('active');});
+        links[id].classList.add('active');
+      }
+    });
+  }, { rootMargin: '-40% 0px -55% 0px' });
+  sections.forEach(function(s){ io.observe(s); });
+})();
+</script>
+</body></html>
