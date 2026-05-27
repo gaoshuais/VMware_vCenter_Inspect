@@ -344,29 +344,55 @@ LICENSE                        # MIT
 
 ---
 
-## 路线图
+## 进度 & 路线图
 
-按优先级排序，欢迎社区参与（提 Issue / PR）：
+按优先级排序，欢迎社区参与（提 Issue / PR）。
 
-### v1.1（计划中）
+### v1.0.0 — 已发布（2026-05-28）
 
-- [ ] **PowerCLI 回退模式**：检测到 PowerCLI 已装则用它补 REST 拿不到的部分（VM 快照大小 / Alarm 历史 / 单 host CPU/Mem 实时）
-- [ ] **多 vCenter 批量**：`-VCenter @('vc1','vc2','vc3')` 原生支持，一次跑一组生成对比报告
-- [ ] **基线对比**：跟上次的 findings 做 diff，只输出新增 / 已解决告警，便于周报
-- [ ] **7.0U3 实测验证**：当前路径自动匹配，缺真实环境实测确认
+- [x] 17 章节完整巡检报告（概览 / Health / 网络 / NTP / 证书 / 备份 / 拓扑 / VM …）
+- [x] Dual-mode REST API，自动适配 vCenter 6.5 / 6.7 / 7.0 / 8.0
+- [x] 18 条 Findings 评估规则 + 短 / 中 / 长期建议动态归类
+- [x] 三种输出：HTML（主）/ Markdown / Word（Office COM）
+- [x] 自动重试（指数退避 1s/2s/4s）+ 401/403/5xx 错误诊断
+- [x] UTF-8 中文 VM 名支持（手控 `HttpWebRequest`，绕过 PS 5.1 GBK 解码）
+- [x] 完整文档：README / CHANGELOG / LICENSE / Demo 报告 / 截图样张
 
-### v1.2（设想中）
+### v1.1 — 计划中
 
-- [ ] **Telegram / 飞书 / 钉钉推送**：`-Notify` 参数，跑完直接把 findings 摘要推群
-- [ ] **配置文件**：阈值（`SSH_WARN`、`DS_CRITICAL_PCT` 等）从 `vcenter_inspect.config.json` 读取，不写死
-- [ ] **历史趋势图**：连续巡检数据写 SQLite，HTML 报告嵌入 Chart.js 折线
-- [ ] **更细粒度的 Health 评分**：参考 vROps 给 vCenter 整体打分
+| 优先级 | 项目                | 说明                                                                            | 状态        |
+| ------ | ------------------- | ------------------------------------------------------------------------------- | ----------- |
+| P0     | PowerCLI 回退模式   | 检测到 PowerCLI 已装则补 REST 拿不到的（VM 快照大小 / Alarm 历史 / Host 实时负载） | 设计中      |
+| P0     | 多 vCenter 批量     | `-VCenter @('vc1','vc2','vc3')` 一次跑一组 + 生成对比汇总报告                    | 待启动      |
+| P1     | Findings 基线对比   | 跟上次结果 diff，只输出新增 / 已解决告警，便于做周报                              | 待启动      |
+| P1     | 7.0 / 7.0U3 实测     | 路径已通过 dual-mode 自动匹配，缺真实环境验证                                    | 求社区帮跑  |
+| P2     | `-RetryOnLoginFail` | sts-idmd 慢启动时登录阶段也走指数退避                                            | 待启动      |
 
-### v2.0（远期）
+### v1.2 — 设想中
 
-- [ ] **多 vCenter Web 控制台**：Flask / FastAPI 把所有 vCenter 状态汇成一个 dashboard
-- [ ] **ESXi 直连模式**：vCenter 故障时直接 SSH/REST 拉单个 ESXi 状态
-- [ ] **vSAN 健康专题章节**：vSAN 集群独立打分
+| 项目                 | 说明                                                            |
+| -------------------- | --------------------------------------------------------------- |
+| Telegram / 飞书 / 钉钉 | `-Notify <bot-cfg.json>` 参数，跑完推 findings 摘要               |
+| 配置文件化           | 阈值（`SSH_WARN` / `DS_CRITICAL_PCT` …）从 `inspect.config.json` 读 |
+| 历史趋势图           | 多次巡检数据写 SQLite，HTML 报告嵌 Chart.js 折线                  |
+| Health 整体评分      | 参考 vROps 给 vCenter 健康度打 0-100 分                          |
+| 国际化               | 英文报告模板（i18n key 抽离）                                    |
+
+### v2.0 — 远期
+
+| 项目                | 说明                                                |
+| ------------------- | --------------------------------------------------- |
+| 多 vCenter Web 控制台 | Flask / FastAPI dashboard，所有 vCenter 状态聚合      |
+| ESXi 直连模式       | vCenter 故障时直接走 ESXi REST / SSH 拉单机状态       |
+| vSAN 健康专题章节   | vSAN 集群独立打分（disk group / object health …）    |
+| 容器化部署          | Docker 镜像 + 计划任务模板 + helm chart              |
+| 报告 diff 可视化    | 两次报告做并排对比 HTML（左旧右新，高亮变化）         |
+
+### 想参与？
+
+- **跨版本兼容反馈** — 手头有 7.0U3 / vSAN 环境的，跑一次贴个截图就帮大忙了
+- **新 Findings 规则** — 你踩过的坑觉得应该被巡检抓出来，提 PR 加规则
+- **新章节** — vROps / Site Recovery Manager / NSX 数据采集延伸
 
 ---
 
