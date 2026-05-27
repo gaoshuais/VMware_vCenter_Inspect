@@ -1,12 +1,44 @@
 # VMware vCenter Inspect
 
-PowerShell + REST API 写的 vCenter 一键巡检工具,生成工程师风 HTML / Markdown / Word 报告。
+> PowerShell + REST API 写的 vCenter 一键巡检工具。一条命令 4 秒出一份工程师风 HTML 报告，零依赖，6.5 / 6.7 / 7.0 / 8.0 全兼容。
 
-- **零依赖** — 只需 Windows PowerShell 5.1+,不装 PowerCLI / pyvmomi
-- **Dual-mode** — 自动适配 vCenter **6.5 / 6.7** (`/rest/...`) 与 **7.0 / 8.0+** (`/api/...`) 两套 REST API
+![PowerShell](https://img.shields.io/badge/PowerShell-5.1%2B%20%2F%207%2B-blue)
+![vCenter](https://img.shields.io/badge/vCenter-6.5%20--%208.0-success)
+![License](https://img.shields.io/badge/License-MIT-green)
+![Version](https://img.shields.io/badge/Version-v1.0.0-blue)
+
+---
+
+## 目录
+
+- [核心特性](#核心特性)
+- [样张报告](#样张报告)
+- [快速开始](#快速开始)
+- [命令行参数](#命令行参数)
+- [报告章节说明](#报告章节说明)
+- [Findings 评估规则](#findings-评估规则)
+- [兼容性矩阵](#兼容性矩阵)
+- [REST API 已知限制](#rest-api-已知限制)
+- [自动化场景](#自动化场景)
+- [开发与踩坑](#开发与踩坑)
+- [路线图](#路线图)
+- [Changelog](#changelog)
+- [贡献](#贡献)
+- [License](#license)
+
+---
+
+## 核心特性
+
+- **零依赖** — 只需 Windows PowerShell 5.1+，不装 PowerCLI / pyvmomi / Python，70 KB 单文件
+- **Dual-mode** — 自动适配 vCenter 6.5 / 6.7（`/rest/com/vmware/cis/...`）与 7.0 / 8.0+（`/api/...`）两套 REST API，无需手工指定版本
 - **17 章节** — 概览 / Health / 网络 / NTP / 访问 / 证书 / 备份 / 拓扑 / 主机 / Datastore / 网络 / VM 总览 / VM 列表 / Tools / 服务 / 总体建议 / 免责
-- **动态告警** — 基于阈值给出短期 (立即处理) / 中期 (1-2 周) / 长期 (持续改进) 三栏建议
-- **三种格式** — HTML (主输出) + DOCX (Word COM 转换) + Markdown (正则转换)
+- **动态告警** — 18 条评估规则按 critical / warn / info 分级，最后一页自动归类成短期 / 中期 / 长期 3 列建议
+- **三种格式** — HTML（主输出）+ DOCX（Word COM 转换）+ Markdown（正则转换），同一份数据
+- **工程师风排版** — 扁平卡片 + 单色边框 + 表格斑马纹，无渐变光晕、无营销式装饰，支持打印（Ctrl+P 出 PDF）
+- **只读采集** — REST API 全是 GET，DELETE 仅用于注销 session，不修改 vCenter 任何配置
+
+---
 
 ## 样张报告
 
@@ -14,129 +46,371 @@ PowerShell + REST API 写的 vCenter 一键巡检工具,生成工程师风 HTML 
 
 > 首屏效果（侧栏 TOC + 蓝色 metadata banner + Summary 卡片 + 章节 1 数据表）
 
-完整整页效果（17 章节全展开 + VM 列表 + 总体建议 + 免责）：[docs/report-preview-full.jpg](docs/report-preview-full.jpg)
+**完整整页效果**（17 章节全展开 + VM 列表 + 总体建议 + 免责）：[docs/report-preview-full.jpg](docs/report-preview-full.jpg)
 
-可执行报告（含 scroll-spy 高亮 / 打印样式 / 鼠标交互）下载 [`report_demo_2026-05-25.html`](report_demo_2026-05-25.html) 浏览器打开查看。所有数据已脱敏。
+**可执行报告**（含 scroll-spy 高亮 / 打印样式 / 鼠标交互）：下载 [`report_demo_2026-05-25.html`](report_demo_2026-05-25.html) 浏览器打开查看。所有数据已脱敏。
+
+---
 
 ## 快速开始
 
-### 1. 巡检
+### 前置
+
+- 一台 **Windows 跳板机**，能访问 vCenter（HTTPS 443）
+- **PowerShell 5.1+**（Windows 10 / 11 / Server 2016+ 自带）或 PowerShell 7+
+- 一个 vCenter 账号，**Read-Only 角色**足够（巡检脚本不写入任何数据）
+
+### 安装
 
 ```powershell
-# 最简用法
-.\vcenter_inspect.ps1 -VCenter 10.0.0.20 `
-                      -Username administrator@vsphere.local `
-                      -Password 'YourPassword'
-
-# 跳过 VMware Tools 抽样 (大规模 VM 时省时)
-.\vcenter_inspect.ps1 -VCenter 10.0.0.20 -Username ... -Password ... -SkipToolsSample
-
-# Debug 模式 (记录每个 endpoint 的 HTTP code 与返回体到 vcenter_debug_*.log)
-.\vcenter_inspect.ps1 -VCenter 10.0.0.20 -Username ... -Password ... -DebugDump
-
-# 指定输出
-.\vcenter_inspect.ps1 -VCenter ... -Username ... -Password ... -Output 'C:\reports\xx.html'
+git clone https://github.com/Aidan-996/VMware_vCenter_Inspect.git
+cd VMware_vCenter_Inspect
 ```
 
-默认输出: `./report_<vcenter>_<yyyy-MM-dd>.html`
-
-### 2. 转 Markdown
+或者只下载主脚本：
 
 ```powershell
+Invoke-WebRequest `
+  -Uri 'https://raw.githubusercontent.com/Aidan-996/VMware_vCenter_Inspect/main/vcenter_inspect.ps1' `
+  -OutFile vcenter_inspect.ps1
+```
+
+### 第一次跑
+
+```powershell
+.\vcenter_inspect.ps1 `
+    -VCenter 10.0.0.20 `
+    -Username administrator@vsphere.local `
+    -Password 'YourPassword'
+```
+
+跑完在脚本目录生成 `report_10.0.0.20_<yyyy-MM-dd>.html`，浏览器直接打开。
+
+### 转 Word / Markdown
+
+```powershell
+# 出 Word（给领导邮件用，需本机装 Office Word）
+.\html_to_docx.ps1 -InputPath .\report_10.0.0.20_2026-05-25.html
+
+# 出 Markdown（接 Wiki / Notion / 公众号用）
 .\html_to_md.ps1 -InputPath .\report_10.0.0.20_2026-05-25.html
 ```
 
-### 3. 转 Word (需本机装 Office Word)
+### 跑起来终端长这样
 
-```powershell
-.\html_to_docx.ps1 -InputPath .\report_10.0.0.20_2026-05-25.html
+```
+==============================================
+  vCenter Inspection v1.0
+  vCenter: 10.0.0.20
+  Time: 2026-05-25 11:49:32
+==============================================
+[ 1/17] (  6%) 登录 vCenter ...
+[ 2/17] ( 12%) 拉取 system version ...
+[ 3/17] ( 18%) 拉取 appliance health ...
+...
+[17/17] (100%) 生成 HTML 报告 ...
+
+  采集汇总
+  ----------------------------------------------
+  ESXi:        N          Datastore:    N
+  VM:          N          Portgroup:    N
+  Findings:    N (critical=N / warn=N / info=N)
+  Elapsed:     N s
+==============================================
 ```
 
-## 命令行参数 (vcenter_inspect.ps1)
+---
 
-| 参数 | 说明 |
-|---|---|
-| `-VCenter` | vCenter IP 或 FQDN (必需) |
-| `-Username` | 用户名 (必需,推荐 `administrator@vsphere.local`) |
-| `-Password` | 密码 (必需) |
-| `-Output` | 输出路径,默认脚本同目录 `report_<vc>_<date>.html` |
-| `-ToolsSampleSize` | VMware Tools 抽样数 (默认 16) |
-| `-SkipToolsSample` | 跳过 Tools 抽样 |
-| `-DebugDump` | 把每个 endpoint 的 HTTP code 与返回体写入 `vcenter_debug_*.log` |
-| `-Quiet` | 静默运行 |
+## 命令行参数
 
-## 兼容性
+### vcenter_inspect.ps1
 
-| vCenter 版本 | API 风格 | 状态 |
-|---|---|---|
-| 8.0.x | `/api/...` (v8) | 完整支持,17 章节全部可用 |
-| 7.0.x | `/api/...` (v8) | 完整支持 |
-| 6.7.x | `/rest/...` (v6, auto-fallback) | 大部分章节可用 |
-| 6.5.x | `/rest/...` (v6, auto-fallback) | 核心章节可用,部分 (cert / backup / access / Tools / NTP / Services) 在 6.5 REST 未暴露 |
-| < 6.5 | — | 不支持 REST API,请用 PowerCLI |
+| 参数 | 必需 | 默认 | 说明 |
+|---|---|---|---|
+| `-VCenter` | ✅ | — | vCenter IP 或 FQDN |
+| `-Username` | ✅ | — | 用户名，推荐 `administrator@vsphere.local` |
+| `-Password` | ✅ | — | 密码 |
+| `-Output` | — | `./report_<vc>_<date>.html` | 输出 HTML 路径 |
+| `-ToolsSampleSize` | — | `16` | VMware Tools 抽样数量（开机 VM）|
+| `-SkipToolsSample` | — | `false` | 跳过 Tools 抽样，节省 ~10 秒 |
+| `-DebugDump` | — | `false` | 每个 endpoint 的 HTTP code + 返回体写入 `vcenter_debug_*.log` |
+| `-Quiet` | — | `false` | 静默运行，不打印进度（CI / 计划任务用） |
 
-脚本通过先试 `/api/session` 失败后 fallback `/rest/com/vmware/cis/session` 自动检测,无需手工指定版本。
+### 常用组合
+
+```powershell
+# 大规模 VM 环境，跳过 Tools 抽样
+.\vcenter_inspect.ps1 -VCenter ... -SkipToolsSample
+
+# 指定输出路径
+.\vcenter_inspect.ps1 -VCenter ... -Output 'C:\reports\q2-2026.html'
+
+# Debug 模式（首次跑某个新版本 vCenter，看具体哪个 endpoint 401/404）
+.\vcenter_inspect.ps1 -VCenter ... -DebugDump
+
+# 静默 + 自定义输出（脚本化调用）
+.\vcenter_inspect.ps1 -VCenter ... -Quiet -Output 'C:\reports\daily.html'
+```
+
+### html_to_docx.ps1 / html_to_md.ps1
+
+```powershell
+.\html_to_docx.ps1 -InputPath <html>  [-OutputPath <docx>]
+.\html_to_md.ps1   -InputPath <html>  [-OutputPath <md>]
+```
+
+`-OutputPath` 留空时输出同目录，扩展名替换为 `.docx` / `.md`。
+
+---
+
+## 报告章节说明
+
+| # | 章节 | 数据源 | 说明 |
+|---|---|---|---|
+| 1 | vCenter 概览 | `appliance/system/version` | version / build / install date / 补丁状态 |
+| 2 | Appliance 健康 | `appliance/health/*` | system / storage / mem / swap / load / db / applmgmt / softpkgs 共 8 项 |
+| 3 | 网络与 DNS | `appliance/networking/interfaces` + `appliance/networking/dns/*` | 网卡 + hostname / mode / servers |
+| 4 | NTP 与时间同步 | `appliance/ntp` + `appliance/timesync` | NTP server 列表 + timesync 状态 |
+| 5 | 访问入口 | `appliance/access/*` | SSH / Bash Shell / DCUI / Console CLI 启用状态 |
+| 6 | vCenter TLS 证书 | `vcenter/certificate-management/*` | 有效期 / 颁发者 / SAN / 指纹 |
+| 7 | VAMI 备份策略 | `appliance/recovery/backup/*` | jobs + schedules |
+| 8 | 拓扑 | `vcenter/datacenter` + `vcenter/cluster` + `vcenter/folder` + `vcenter/resource-pool` | DC / Cluster / Folder / ResourcePool 树状关系 |
+| 9 | ESXi 主机 | `vcenter/host` | host 列表 + 连接状态 + power state |
+| 10 | Datastore | `vcenter/datastore` | 容量 / 已用 / 类型 / 使用率进度条 |
+| 11 | 网络 / Portgroup | `vcenter/network` | Standard / Distributed Portgroup 计数 |
+| 12 | VM 总览 | `vcenter/vm` | 总数 / 开机 / 关机 / 挂起 + vCPU / 内存汇总卡片 |
+| 13 | VM 列表 | `vcenter/vm` | 按 power + vCPU 排序的完整 VM 表 |
+| 14 | VMware Tools 抽样 | `vcenter/vm/{vm}/tools` | 开机 VM 抽样调用 Tools 接口 |
+| 15 | Appliance 服务 | `appliance/services/*` | 核心 20 项（vpxd / vpostgres / vapi-endpoint / sts-idmd / eam / sps / vsan-health …） |
+| 16 | 总体建议 | （动态） | 按 findings 分短期严重 / 中期警告 / 长期提示 3 列 |
+| 17 | 免责声明 | （静态） | REST API 限制说明 |
+
+---
 
 ## Findings 评估规则
 
+巡检不是单纯打印数据，得有判断。规则按 VMware 官方 best practice + 真实生产环境踩过的坑总结：
+
 | 维度 | 阈值 | 级别 |
 |---|---|---|
-| Appliance Health (8 项) | yellow / orange | warn,red = critical |
-| NTP 列表为空 | — | warn |
-| Timesync 模式 ≠ NTP | — | warn |
+| Appliance Health 任意项 | yellow / orange | warn |
+| Appliance Health 任意项 | red | **critical** |
+| NTP 服务列表为空 | — | warn |
+| Timesync 状态 ≠ NTP | — | warn |
 | DNS hostname = `localhost` 或空 | — | warn |
-| DNS server < 2 个 | — | info |
+| DNS server 数 < 2 | — | info |
 | SSH 启用 | — | warn |
 | DCUI 启用 | — | info |
-| TLS 证书 < 30 天过期 | — | critical |
-| TLS 证书 < 90 天过期 | — | warn |
-| 证书自签 (issuer 含 localhost) | — | info |
-| 备份 jobs / schedules 双空 | — | warn (两条) |
+| TLS 证书剩余 < 30 天 | — | **critical** |
+| TLS 证书剩余 < 90 天 | — | warn |
+| TLS 证书自签（issuer 含 localhost / VMSCA） | — | info |
+| VAMI 备份 jobs 空 | — | warn |
+| VAMI 备份 schedules 空 | — | warn |
 | Cluster ≥ 2 节点 + HA 关 | — | warn |
 | Cluster ≥ 2 节点 + DRS 关 | — | info |
-| Datastore 使用率 ≥ 90% | — | critical |
+| Datastore 使用率 ≥ 90% | — | **critical** |
 | Datastore 使用率 ≥ 80% | — | warn |
 | Datastore 使用率 ≥ 70% | — | info |
-| VMware Tools 版本偏旧 | — | info |
-| vCenter 补丁状态非 UP_TO_DATE | — | info |
+| VMware Tools 抽样有 OLD 版本 | — | info |
+| vCenter update 非 UP_TO_DATE | — | info |
 
-## REST API 8.0 限制 (脚本中已声明,报告免责章节也说明)
+短期 / 中期 / 长期建议按 findings 等级自动归类到第 16 章节，照着做即可，全程不用人工标注。
 
-REST API 不暴露的部分,本工具不采集,如需补充请用 **PowerCLI** 或 **vSphere SDK (vmodl SOAP)**:
+---
 
-- 单 ESXi 主机详细信息 (CPU/Memory/Build/Uptime/Maintenance Mode) — 端点 deprecated
-- VM 快照列表 / 大小
-- Alarm / Event / 告警历史
-- License 状态 (8.0 REST 返回 404)
-- 性能历史曲线 (CPU/Memory/IOPS,stats API 仍是 preview)
+## 兼容性矩阵
 
-## 设计原则
+### vCenter 版本
 
-- **零依赖**: 不强迫装 PowerCLI (300+ MB)
-- **不修改 vCenter 配置**: 全部 GET / POST `/api/session` 与 DELETE 注销,不写入任何文件到 Appliance
-- **工程师风**: HTML 用扁平卡片 + 单色边框 + 表格斑马纹,不做营销式装饰
-- **自动重试**: 对 0 / 5xx 瞬时错误自动指数退避重试 (1s/2s/4s),扛 sts-idmd 抖动
-- **错误诊断**: 401 / 403 / 5xx / 网络不可达分别给出修复建议
+| vCenter | REST API 路径 | 状态 |
+|---|---|---|
+| 8.0 / 8.0U2 / 8.0U3 | `/api/*` | ✅ 完整支持，17 章节全部可用 |
+| 7.0 / 7.0U3 | `/api/*` | ✅ dual-mode 路径自动匹配，待社区补实测 |
+| 6.7.x | `/rest/com/vmware/cis/*` | ✅ 兼容（路径同 6.5） |
+| 6.5.x | `/rest/com/vmware/cis/*` | ✅ 核心章节可用，部分（cert / backup / access / Tools / NTP / Services）6.5 REST 未暴露，对应章节自动 skip |
+| < 6.5 | — | ❌ REST API 不全，请用 PowerCLI |
 
-## 已知踩坑 (PowerShell 5.1)
+**dual-mode 工作原理**：
+
+1. 登录阶段：先试 `POST /api/session`，401/404 自动 fallback 到 `POST /rest/com/vmware/cis/session`
+2. 所有读接口：先 `/api/<path>` → 失败再 `/rest/<path>` → 自动 unwrap 6.5 返回的 `{value}` 包裹
+3. 不存在的端点：识别 404 直接 skip 当前章节，渲染为"该版本 API 不支持"，不打断整体巡检
+
+### PowerShell 版本
+
+| PowerShell | 状态 |
+|---|---|
+| Windows PowerShell **5.1**（Win10/11 自带） | ✅ 主测试环境 |
+| PowerShell **7.0+**（Core） | ✅ 兼容 |
+| Linux / macOS 上的 pwsh | ⚠️ 理论可用，未实测 |
+
+### 跳板机操作系统
+
+| OS | 状态 |
+|---|---|
+| Windows 10 / 11 | ✅ |
+| Windows Server 2016 / 2019 / 2022 / 2025 | ✅ |
+| Linux + pwsh 7 | ⚠️ 未测 |
+
+---
+
+## REST API 已知限制
+
+REST API 不暴露的部分，本工具不采集，如需补充请用 **PowerCLI** 或 **vSphere SDK (vmodl SOAP)**：
+
+- **单 ESXi 主机详细信息**：CPU / Memory / Build / Uptime / Maintenance Mode 在 8.0 端点 deprecated
+- **VM 快照列表 / 大小**：REST 能拿快照树，但 size 字段不暴露
+- **Alarm / Event / 告警历史**：REST 不提供告警 API
+- **License 状态**：`/api/vcenter/licensing/licenses` 在 8.0 返回 404
+- **性能历史曲线**：CPU / Memory / IOPS stats API 仍是 preview，字段不稳
+
+巡检报告里这几栏会标注"REST 不支持，请用 PowerCLI / vSphere Client 查看"，不糊弄。
+
+后续 `v1.1` 计划加 PowerCLI 回退模式，检测到 PowerCLI 已装则用它补这一块（详见 [路线图](#路线图)）。
+
+---
+
+## 自动化场景
+
+### Windows 计划任务（每周一巡检）
+
+```powershell
+$action = New-ScheduledTaskAction -Execute 'powershell.exe' `
+    -Argument '-NoProfile -File C:\Tools\vcenter_inspect.ps1 -VCenter 10.0.0.20 -Username administrator@vsphere.local -Password "***" -Quiet -Output C:\Reports\weekly.html'
+
+$trigger = New-ScheduledTaskTrigger -Weekly -DaysOfWeek Monday -At 8:00am
+
+Register-ScheduledTask -TaskName 'vCenter Weekly Inspect' `
+    -Action $action -Trigger $trigger -RunLevel Highest
+```
+
+### 多 vCenter 批量（临时方案）
+
+```powershell
+@(
+    @{ vc='10.0.0.20'; out='vc01.html' }
+    @{ vc='10.0.0.21'; out='vc02.html' }
+    @{ vc='10.0.0.22'; out='vc03.html' }
+) | ForEach-Object {
+    .\vcenter_inspect.ps1 -VCenter $_.vc `
+        -Username administrator@vsphere.local -Password '***' `
+        -Output $_.out -Quiet
+}
+```
+
+> 多 vCenter 原生批量模式在 [v1.1 路线图](#路线图) 中。
+
+### CI / 邮件投递
+
+跑完后用 `Send-MailMessage` 或 `Invoke-RestMethod` 推 Telegram / 飞书 / 钉钉。报告生成后输出码不变，直接读 HTML 体积判断成功。
+
+---
+
+## 开发与踩坑
+
+写这脚本三天，60% 时间花在 PowerShell 5.1 的几个特性坑上：
 
 | 坑 | 解法 |
 |---|---|
-| PS 5.1 默认 ANSI/GBK 读 .ps1 中文乱码 | 脚本必须保存为 **UTF-8 + BOM** |
-| `Invoke-RestMethod` 对中文 VM 名 GBK 误解码 | 用 `[System.Net.HttpWebRequest]` 手控 UTF-8 |
-| TLS 自签证书拒绝 | `TrustAllCertsPolicy` 类 + `Tls12` |
-| `ConvertFrom-Json '[]'` 在 5.1 返回 null | 关键地方写 `if ($null -eq $x) { @() } else { @($x) }` |
-| 嵌套 inline-if 子表达式 `$(if(...){...}elseif(...))` 偶尔解析失败 | 预计算到变量,然后引用 |
-| `[System.Text.UTF8Encoding]::new($false)` 静态构造在某些 5.1 不可用 | 用 `New-Object System.Text.UTF8Encoding($false)` |
+| PS 5.1 默认按 ANSI/GBK 读 .ps1 → 中文乱码 | 脚本必须存为 **UTF-8 + BOM**，生成时显式 `New-Object System.Text.UTF8Encoding($true)` |
+| `Invoke-RestMethod` 对中文 VM 名 GBK 误解码 → `???` 乱码 | 改用 `[System.Net.HttpWebRequest]` 手控 + `[Text.Encoding]::UTF8.GetString()` 读流 |
+| TLS 自签证书拒绝 | 注入 `TrustAllCertsPolicy` 类 + `[Net.ServicePointManager]::SecurityProtocol = Tls12` |
+| `ConvertFrom-Json '[]'` 在 PS 5.1 返回 `$null`，`@($null).Count = 1` | 关键路径写 `if ($null -eq $x) { @() } else { @($x) }` |
+| 嵌套 inline-if 子表达式 `$(if(...){...}elseif(...))` 在 PS 5.1 hashtable value 位置偶尔解析失败 | 预计算到变量，再引用 |
+| `[System.Text.UTF8Encoding]::new($false)` 静态构造在部分 PS 5.1 环境不可用 | 用 `New-Object System.Text.UTF8Encoding($false)` 替代 |
 
-## 文件结构
+### 设计原则
+
+- **零依赖**：不强迫装 PowerCLI（300+ MB）/ 不依赖 Python / 不依赖任何 module
+- **只读 + 不留挂**：全部 GET，DELETE 只用于注销 session，脚本退出主动清理
+- **工程师风**：HTML 用扁平卡片 + 单色边框，不做营销式装饰
+- **自动重试**：对 0 / 5xx 瞬时错误指数退避（1s/2s/4s），扛 sts-idmd 抖动
+- **错误诊断**：401 / 403 / 5xx / 网络不可达 / 证书问题分别给出具体修复建议
+
+### 文件结构
 
 ```
-vcenter_inspect.ps1     # 主巡检脚本,生成 HTML
-html_to_md.ps1          # HTML → Markdown 转换 (针对本项目结构,正则解析)
-html_to_docx.ps1        # HTML → Word 转换 (Microsoft Word COM)
+vcenter_inspect.ps1            # 主巡检脚本，生成 HTML (1250 行)
+html_to_md.ps1                 # HTML → Markdown 转换器
+html_to_docx.ps1               # HTML → Word 转换器 (依赖 Office Word COM)
+report_demo_2026-05-25.html    # 脱敏 demo 报告样张
+docs/
+├── report-preview.png         # 首屏 hero 图
+└── report-preview-full.jpg    # 整页超长效果图
+CHANGELOG.md                   # 版本变更日志
+README.md                      # 本文件
+LICENSE                        # MIT
 ```
+
+---
+
+## 路线图
+
+按优先级排序，欢迎社区参与（提 Issue / PR）：
+
+### v1.1（计划中）
+
+- [ ] **PowerCLI 回退模式**：检测到 PowerCLI 已装则用它补 REST 拿不到的部分（VM 快照大小 / Alarm 历史 / 单 host CPU/Mem 实时）
+- [ ] **多 vCenter 批量**：`-VCenter @('vc1','vc2','vc3')` 原生支持，一次跑一组生成对比报告
+- [ ] **基线对比**：跟上次的 findings 做 diff，只输出新增 / 已解决告警，便于周报
+- [ ] **7.0U3 实测验证**：当前路径自动匹配，缺真实环境实测确认
+
+### v1.2（设想中）
+
+- [ ] **Telegram / 飞书 / 钉钉推送**：`-Notify` 参数，跑完直接把 findings 摘要推群
+- [ ] **配置文件**：阈值（`SSH_WARN`、`DS_CRITICAL_PCT` 等）从 `vcenter_inspect.config.json` 读取，不写死
+- [ ] **历史趋势图**：连续巡检数据写 SQLite，HTML 报告嵌入 Chart.js 折线
+- [ ] **更细粒度的 Health 评分**：参考 vROps 给 vCenter 整体打分
+
+### v2.0（远期）
+
+- [ ] **多 vCenter Web 控制台**：Flask / FastAPI 把所有 vCenter 状态汇成一个 dashboard
+- [ ] **ESXi 直连模式**：vCenter 故障时直接 SSH/REST 拉单个 ESXi 状态
+- [ ] **vSAN 健康专题章节**：vSAN 集群独立打分
+
+---
+
+## Changelog
+
+完整历史见 [CHANGELOG.md](CHANGELOG.md)。
+
+- **v1.0.0** (2026-05-25)：首发，17 章节 + dual-mode + Findings 评估 + HTML/MD/DOCX 三种格式
+
+---
+
+## 贡献
+
+欢迎所有形式的贡献，特别是：
+
+- **跨版本兼容性反馈**：7.0U3 / 8.0U2 / 8.0U3 / vSAN 环境帮跑一次 + 提 Issue 反馈结果
+- **新 Findings 规则**：你踩过哪些坑觉得应该被巡检抓出来，提 PR 加规则
+- **Tools 适配**：vRA / vRO / NSX 适配延伸
+
+### 提 Issue 时请附
+
+1. vCenter 版本（精确到 build，从 vSphere Client 右上角 ?）
+2. PowerShell 版本（`$PSVersionTable.PSVersion`）
+3. 复现命令（去掉密码）
+4. `-DebugDump` 模式生成的 `vcenter_debug_*.log`（去掉环境内 IP）
+
+### 开发约定
+
+- PowerShell 脚本必须保存为 **UTF-8 + BOM**（PS 5.1 兼容要求）
+- 新增章节遵循 `Section-XX-<name>` 命名 + 同步 Eval-Findings 评估规则
+- 不引入新依赖（保持零依赖原则）
+
+---
 
 ## License
 
-MIT
+[MIT](LICENSE) © 2026 [Aidan-996](https://github.com/Aidan-996)
+
+---
+
+## 相关项目
+
+- [Linux Auto Inspection](https://github.com/Aidan-996/Linux_Auto_Inspection) — 同款工程师风的 Linux 一键巡检（Bash）
+
+---
+
+如果这个工具帮你省下手工出报告的时间，欢迎在仓库点 Star 让更多人看到。问题 / 建议 / 兼容性反馈，[提 Issue](https://github.com/Aidan-996/VMware_vCenter_Inspect/issues) 即可。
