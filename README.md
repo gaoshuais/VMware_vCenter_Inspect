@@ -318,7 +318,7 @@ Register-ScheduledTask -TaskName 'vCenter Weekly Inspect' `
 }
 ```
 
-> 多 vCenter 原生批量模式在 [v1.1 路线图](#路线图) 中。
+> 多 vCenter 原生批量模式（`-VCenter @('vc1','vc2','vc3')` + 对比汇总）在 [v1.2 路线图](#路线图) 中。
 
 ### CI / 邮件投递
 
