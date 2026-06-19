@@ -1,11 +1,16 @@
 ﻿<#
 .SYNOPSIS
-    VMware vCenter 一键巡检脚本 (PowerShell + REST API, 零依赖)
+    VMware vCenter 一键巡检脚本 (PowerShell + REST API + 可选 PowerCLI 回退)
 
 .DESCRIPTION
     通过 vCenter REST API (vSphere Automation API 8.0+) 拉取数据,
-    生成工程师风 HTML 巡检报告,无需安装 PowerCLI / pyvmomi。
+    生成工程师风 HTML 巡检报告。零依赖 (PowerCLI 是可选回退)。
     兼容 Windows PowerShell 5.1 与 PowerShell 7+。
+
+    v1.1: 检测到 PowerCLI 时自动补采 REST 拿不到的数据：
+      - 单 ESXi 主机实时 CPU/Mem/Uptime/Build (REST 8.0 已 deprecated)
+      - VM 快照清单 (含大小 + 年龄 + 链深度, REST 不暴露)
+      - 当前 Triggered Alarms (REST 不暴露)
 
 .PARAMETER VCenter
     vCenter IP 或 FQDN, 例: 192.168.100.20
@@ -29,13 +34,24 @@
 .PARAMETER Quiet
     静默运行, 不输出进度
 
+.PARAMETER UsePowerCLI
+    强制启用 PowerCLI 回退; 未安装时打印安装提示。
+
+.PARAMETER SkipPowerCLI
+    强制跳过 PowerCLI 回退 (即使已安装), 只用纯 REST。
+
 .EXAMPLE
     .\vcenter_inspect.ps1 -VCenter 192.168.100.20 -Username administrator@vsphere.local -Password 'Cctx@1234'
 
+.EXAMPLE
+    # 显式启用 PowerCLI 回退补全快照/Alarm
+    .\vcenter_inspect.ps1 -VCenter vc.lan -Username root@vsphere.local -Password '***' -UsePowerCLI
+
 .NOTES
     Author : Claude Opus 4.7
-    Date   : 2026-05-25
+    Date   : 2026-06-19
     Style  : 仿 linux_inspect.sh v2.4 工程师风
+    Version: v1.1.0 (PowerCLI 回退层)
 #>
 
 [CmdletBinding()]
@@ -47,7 +63,10 @@ param(
     [int]    $ToolsSampleSize = 16,
     [switch] $SkipToolsSample,
     [switch] $Quiet,
-    [switch] $DebugDump
+    [switch] $DebugDump,
+    # v1.1: PowerCLI 回退 — 自动检测；显式开关
+    [switch] $UsePowerCLI,    # 强制启用 (即使未装也尝试 Install-Module 提示)
+    [switch] $SkipPowerCLI    # 强制跳过 (即使已装)
 )
 
 # ============================================================================
@@ -80,13 +99,14 @@ public class TrustAllCertsPolicy : ICertificatePolicy {
 $Script:StepIdx   = 0
 $Script:StepTotal = 14
 $Script:T0        = Get-Date
+$Script:PCLIEnabled = $false   # v1.1: PowerCLI 回退是否启用
 
 function Log-Banner {
     if ($Quiet) { return }
     $line = '═' * 70
     Write-Host ''
     Write-Host $line -ForegroundColor DarkCyan
-    Write-Host (' vCenter Inspect  v1.0   |  target: {0}   |  {1}' -f $VCenter, (Get-Date -Format 'yyyy-MM-dd HH:mm:ss')) -ForegroundColor Cyan
+    Write-Host (' vCenter Inspect  v1.1.0 |  target: {0}   |  {1}' -f $VCenter, (Get-Date -Format 'yyyy-MM-dd HH:mm:ss')) -ForegroundColor Cyan
     Write-Host (' steps: {0}                  |  user  : {1}' -f $Script:StepTotal, $Username) -ForegroundColor DarkGray
     Write-Host $line -ForegroundColor DarkCyan
     Write-Host ''
@@ -329,6 +349,188 @@ function Health-Badge([string]$state) {
 }
 
 # ============================================================================
+#  PowerCLI 回退层 (v1.1)
+#  补 REST 在 8.0 拿不到的: 快照大小 / 当前 Alarm / 单 host 实时 CPU/Mem
+# ============================================================================
+function Try-LoadPowerCLI {
+    if ($SkipPowerCLI) { return $false }
+    $mod = Get-Module -ListAvailable VMware.VimAutomation.Core -ErrorAction SilentlyContinue | Select-Object -First 1
+    if (-not $mod) {
+        if ($UsePowerCLI) {
+            Log-Warn 'PowerCLI 未安装。先运行: Install-Module VMware.PowerCLI -Scope CurrentUser -Force'
+        } else {
+            Log-Info 'PowerCLI 未安装,跳过快照/Alarm/Host 实时采集 (如需启用: Install-Module VMware.PowerCLI)'
+        }
+        return $false
+    }
+    try {
+        Import-Module VMware.VimAutomation.Core -ErrorAction Stop -WarningAction SilentlyContinue
+        # 关掉证书校验 + CEIP 询问
+        Set-PowerCLIConfiguration -InvalidCertificateAction Ignore   -Confirm:$false -Scope Session | Out-Null
+        Set-PowerCLIConfiguration -ParticipateInCeip       $false    -Confirm:$false -Scope Session | Out-Null
+        Set-PowerCLIConfiguration -DefaultVIServerMode     Single    -Confirm:$false -Scope Session | Out-Null
+        Log-Info ("PowerCLI 已加载 (VimAutomation.Core $($mod.Version))")
+        return $true
+    } catch {
+        Log-Warn ("PowerCLI 加载失败: $($_.Exception.Message)")
+        return $false
+    }
+}
+
+function Connect-PowerCLI {
+    try {
+        $sec = ConvertTo-SecureString $Password -AsPlainText -Force
+        $cred = New-Object System.Management.Automation.PSCredential($Username, $sec)
+        $srv = Connect-VIServer -Server $VCenter -Credential $cred -ErrorAction Stop -WarningAction SilentlyContinue
+        if ($srv) {
+            Log-Info ("PowerCLI 已连接 vCenter (build $($srv.Build))")
+            return $true
+        }
+    } catch {
+        Log-Warn ("PowerCLI Connect-VIServer 失败: $($_.Exception.Message)")
+    }
+    return $false
+}
+
+function Disconnect-PowerCLI {
+    try { Disconnect-VIServer -Server $VCenter -Confirm:$false -Force -ErrorAction SilentlyContinue | Out-Null } catch {}
+}
+
+function Collect-PowerCLI {
+    if (-not (Try-LoadPowerCLI))   { return }
+    if (-not (Connect-PowerCLI))   { return }
+    $Script:PCLIEnabled = $true
+
+    # ---- 1. 单 Host 实时 (NumCpu/Cpu/Mem/Uptime/Build/Vendor/Model) ----
+    Log-Step '[PCLI] 单 Host 实时数据'
+    try {
+        $hostList = New-Object System.Collections.Generic.List[psobject]
+        foreach ($h in (Get-VMHost -ErrorAction Stop)) {
+            $cpuTotalMhz = [int]$h.CpuTotalMhz
+            $cpuUsedMhz  = [int]$h.CpuUsageMhz
+            $memTotalGB  = [math]::Round($h.MemoryTotalGB, 1)
+            $memUsedGB   = [math]::Round($h.MemoryUsageGB, 1)
+            $cpuPct      = if ($cpuTotalMhz -gt 0) { [math]::Round(100 * $cpuUsedMhz / $cpuTotalMhz, 1) } else { 0 }
+            $memPct      = if ($memTotalGB  -gt 0) { [math]::Round(100 * $memUsedGB  / $memTotalGB,  1) } else { 0 }
+            $uptimeDays  = 0
+            try {
+                $bt = $h.ExtensionData.Runtime.BootTime
+                if ($bt) { $uptimeDays = [math]::Round(((Get-Date).ToUniversalTime() - $bt.ToUniversalTime()).TotalDays, 1) }
+            } catch {}
+            $hostList.Add([pscustomobject]@{
+                Name        = $h.Name
+                ConnState   = "$($h.ConnectionState)"
+                PowerState  = "$($h.PowerState)"
+                NumCpu      = [int]$h.NumCpu
+                CpuUsedMhz  = $cpuUsedMhz
+                CpuTotalMhz = $cpuTotalMhz
+                CpuPct      = $cpuPct
+                MemUsedGB   = $memUsedGB
+                MemTotalGB  = $memTotalGB
+                MemPct      = $memPct
+                UptimeDays  = $uptimeDays
+                Version     = "$($h.Version)"
+                Build       = "$($h.Build)"
+                Vendor      = "$($h.Manufacturer)"
+                Model       = "$($h.Model)"
+            })
+        }
+        $Data.PCLI_Hosts = @($hostList)
+        Log-Info ("拉到 {0} 台 ESXi 实时数据" -f $hostList.Count)
+    } catch {
+        Log-Warn ("Get-VMHost 失败: $($_.Exception.Message)")
+        $Data.PCLI_Hosts = @()
+    }
+
+    # ---- 2. VM 快照 (Get-Snapshot per VM 太慢, 一次拉全部 VM 的) ----
+    Log-Step '[PCLI] VM 快照'
+    try {
+        $allVMs = Get-VM -ErrorAction Stop
+        $snaps  = New-Object System.Collections.Generic.List[psobject]
+        $bySrc  = @{}   # vmName -> snap count
+        foreach ($vm in $allVMs) {
+            $ss = @($vm | Get-Snapshot -ErrorAction SilentlyContinue)
+            if ($ss.Count -eq 0) { continue }
+            $bySrc[$vm.Name] = $ss.Count
+            foreach ($s in $ss) {
+                $created = $null
+                try { $created = [DateTime]$s.Created } catch {}
+                $ageDays = if ($created) { [math]::Round(((Get-Date) - $created).TotalDays, 1) } else { $null }
+                $snaps.Add([pscustomobject]@{
+                    VM        = $vm.Name
+                    Snapshot  = "$($s.Name)"
+                    Created   = if ($created) { $created.ToString('yyyy-MM-dd HH:mm') } else { '—' }
+                    AgeDays   = $ageDays
+                    SizeGB    = [math]::Round([double]$s.SizeGB, 2)
+                    PowerState= "$($vm.PowerState)"
+                    Desc      = "$($s.Description)"
+                })
+            }
+        }
+        $totalGB = ($snaps | Measure-Object -Property SizeGB -Sum).Sum
+        if (-not $totalGB) { $totalGB = 0 }
+        $Data.PCLI_Snapshots = [pscustomobject]@{
+            All        = @($snaps)
+            VmCount    = $bySrc.Count
+            Count      = $snaps.Count
+            TotalGB    = [math]::Round($totalGB, 2)
+            OldestDays = if ($snaps.Count -gt 0) { ($snaps | Measure-Object -Property AgeDays -Maximum).Maximum } else { 0 }
+            MaxChain   = if ($bySrc.Count -gt 0) { ($bySrc.Values | Measure-Object -Maximum).Maximum } else { 0 }
+            Top10      = @($snaps | Sort-Object -Property SizeGB -Descending | Select-Object -First 10)
+        }
+        Log-Info ("拉到 {0} 个快照, 涉及 {1} 台 VM, 共 {2} GB" -f $snaps.Count, $bySrc.Count, $Data.PCLI_Snapshots.TotalGB)
+    } catch {
+        Log-Warn ("Get-Snapshot 失败: $($_.Exception.Message)")
+        $Data.PCLI_Snapshots = $null
+    }
+
+    # ---- 3. 当前 Triggered Alarms ----
+    Log-Step '[PCLI] 当前告警 (Triggered Alarms)'
+    try {
+        $triggered = New-Object System.Collections.Generic.List[psobject]
+        # 遍历所有有 TriggeredAlarmState 的对象
+        $entities = @()
+        $entities += @(Get-Datacenter -ErrorAction SilentlyContinue)
+        $entities += @(Get-Cluster    -ErrorAction SilentlyContinue)
+        $entities += @(Get-VMHost     -ErrorAction SilentlyContinue)
+        $entities += @(Get-Datastore  -ErrorAction SilentlyContinue)
+        $entities += @(Get-VM         -ErrorAction SilentlyContinue)
+        foreach ($e in $entities) {
+            $tas = $null
+            try { $tas = $e.ExtensionData.TriggeredAlarmState } catch {}
+            if (-not $tas) { continue }
+            foreach ($t in @($tas)) {
+                $alarmName = '—'
+                try {
+                    $alm = Get-View -Id $t.Alarm -ErrorAction SilentlyContinue
+                    if ($alm) { $alarmName = "$($alm.Info.Name)" }
+                } catch {}
+                $time = $null
+                try { $time = [DateTime]$t.Time } catch {}
+                $triggered.Add([pscustomobject]@{
+                    Entity    = "$($e.Name)"
+                    EntityType= ($e.GetType().Name -replace 'Impl$','')
+                    Alarm     = $alarmName
+                    Status    = "$($t.OverallStatus)"
+                    Time      = if ($time) { $time.ToString('yyyy-MM-dd HH:mm') } else { '—' }
+                    AgeHours  = if ($time) { [math]::Round(((Get-Date) - $time).TotalHours, 1) } else { $null }
+                    Acked     = [bool]$t.Acknowledged
+                })
+            }
+        }
+        $Data.PCLI_Alarms = @($triggered | Sort-Object @{e='Status';desc=$true}, Time -Descending)
+        $redN  = @($triggered | Where-Object { "$($_.Status)" -eq 'red'    }).Count
+        $yelN  = @($triggered | Where-Object { "$($_.Status)" -eq 'yellow' }).Count
+        Log-Info ("当前告警 {0} 条 (red={1} / yellow={2})" -f $triggered.Count, $redN, $yelN)
+    } catch {
+        Log-Warn ("Triggered Alarms 拉取失败: $($_.Exception.Message)")
+        $Data.PCLI_Alarms = @()
+    }
+
+    Disconnect-PowerCLI
+}
+
+# ============================================================================
 #  数据采集
 # ============================================================================
 $Data = [ordered]@{}
@@ -547,6 +749,40 @@ function Eval-Findings {
     # update
     if ($Data.Update -and "$($Data.Update.state)" -notin @('UP_TO_DATE','')) {
         Add-Issue 'info' '补丁' ("vCenter 更新状态: $($Data.Update.state)") '可在 VAMI (5480) → Update 查看可用补丁'
+    }
+
+    # ---------- v1.1: PowerCLI 维度 ----------
+    if ($Script:PCLIEnabled) {
+        # 单 host 实时
+        if ($Data.PCLI_Hosts) {
+            foreach ($h in @($Data.PCLI_Hosts)) {
+                if ($h.MemPct -ge 90) { Add-Issue 'critical' 'ESXi 主机' ("$($h.Name) 内存使用率 {0}%" -f $h.MemPct) '已超 90%, VM swap/balloon 风险大, 建议立即均衡负载或扩容内存' }
+                elseif ($h.MemPct -ge 80) { Add-Issue 'warn' 'ESXi 主机' ("$($h.Name) 内存使用率 {0}%" -f $h.MemPct) '已超 80%, 建议关注内存增长趋势' }
+                if ($h.CpuPct -ge 85) { Add-Issue 'warn' 'ESXi 主机' ("$($h.Name) CPU 使用率 {0}%" -f $h.CpuPct) '采样瞬时值, 持续高位需检查 vCPU 超分配或负载倾斜' }
+                if ("$($h.ConnState)" -in @('Disconnected','NotResponding')) {
+                    Add-Issue 'critical' 'ESXi 主机' ("$($h.Name) 连接状态 = $($h.ConnState)") '主机异常脱管, 立即排查网络 / vpxa / hostd'
+                }
+                if ($h.UptimeDays -gt 365) {
+                    Add-Issue 'info' 'ESXi 主机' ("$($h.Name) uptime {0} 天" -f $h.UptimeDays) '运行 > 1 年, 建议安排窗口期重启或打补丁'
+                }
+            }
+        }
+        # 快照健康
+        if ($Data.PCLI_Snapshots) {
+            $sn = $Data.PCLI_Snapshots
+            if ($sn.OldestDays -gt 90)  { Add-Issue 'critical' '快照' ("最老快照已存在 {0} 天" -f $sn.OldestDays) '快照 > 90 天会拖累性能并放大磁盘占用, 立即合并或删除' }
+            elseif ($sn.OldestDays -gt 30) { Add-Issue 'warn' '快照' ("最老快照已存在 {0} 天" -f $sn.OldestDays) '快照 > 30 天建议清理; 长期快照非备份机制' }
+            if ($sn.MaxChain -gt 3)     { Add-Issue 'warn' '快照' ("单 VM 最长快照链 = $($sn.MaxChain)") '快照链 > 3 层导致 I/O 严重劣化, 建议合并' }
+            if ($sn.TotalGB -gt 1024)   { Add-Issue 'info' '快照' ("快照总占用 {0} GB" -f $sn.TotalGB) '考虑定期清理或转 RBP 备份' }
+            if ($sn.Count -eq 0)        { Add-Issue 'info' '快照' '当前无任何快照' '快照为空属正常运维状态' }
+        }
+        # 告警
+        if ($Data.PCLI_Alarms) {
+            $red = @($Data.PCLI_Alarms | Where-Object { "$($_.Status)" -eq 'red' })
+            $yel = @($Data.PCLI_Alarms | Where-Object { "$($_.Status)" -eq 'yellow' })
+            if ($red.Count -gt 0) { Add-Issue 'critical' 'Alarm' ("当前 RED 告警 {0} 条" -f $red.Count) '立即在 vSphere Client → Monitor → Triggered Alarms 中处理' }
+            if ($yel.Count -gt 5) { Add-Issue 'warn'     'Alarm' ("当前 YELLOW 告警 {0} 条" -f $yel.Count) '黄色告警偏多, 建议梳理并设置告警抑制 / 修复' }
+        }
     }
 
     return ,$issues
@@ -795,8 +1031,10 @@ footer{text-align:center;color:var(--fg-dim);font-size:11px;font-family:var(--mo
         @('13','sec-vm-list',  'VM 列表'),
         @('14','sec-tools',    'VMware Tools 抽样'),
         @('15','sec-services', 'Appliance 服务'),
-        @('16','sec-find',     '总体建议'),
-        @('17','sec-discl',    '免责声明')
+        @('16','sec-snap',     'VM 快照健康'),
+        @('17','sec-alarm',    'Alarm 当前告警'),
+        @('18','sec-find',     '总体建议'),
+        @('19','sec-discl',    '免责声明')
     )
 
     $sb = New-Object System.Text.StringBuilder
@@ -1106,6 +1344,37 @@ footer{text-align:center;color:var(--fg-dim);font-size:11px;font-family:var(--mo
     </tr>
 "@
     }
+    # PowerCLI 实时数据 (v1.1)
+    $pcliHostBlock = ''
+    if ($Script:PCLIEnabled -and $Data.PCLI_Hosts) {
+        $rowsPcli = ''
+        foreach ($h in @($Data.PCLI_Hosts)) {
+            $csKind = if ("$($h.ConnState)" -eq 'Connected') { 'green' } elseif ("$($h.ConnState)" -in @('Disconnected','NotResponding')) { 'red' } else { 'amber' }
+            $cpuKind = if ($h.CpuPct -ge 85) { 'red' } elseif ($h.CpuPct -ge 70) { 'amber' } else { 'green' }
+            $memKind = if ($h.MemPct -ge 90) { 'red' } elseif ($h.MemPct -ge 80) { 'amber' } else { 'green' }
+            $rowsPcli += @"
+    <tr>
+      <td class="w">$(Html-Encode $h.Name)</td>
+      <td>$(Html-Encode $h.Version) <span class="muted">build $(Html-Encode $h.Build)</span></td>
+      <td>$(Html-Encode $h.Vendor) $(Html-Encode $h.Model)</td>
+      <td>$($h.NumCpu) vCPU · $(Badge -Text ("{0}%" -f $h.CpuPct) -Kind $cpuKind) <span class="muted">$($h.CpuUsedMhz) / $($h.CpuTotalMhz) MHz</span></td>
+      <td>$(Badge -Text ("{0}%" -f $h.MemPct) -Kind $memKind) <span class="muted">$($h.MemUsedGB) / $($h.MemTotalGB) GB</span></td>
+      <td>$($h.UptimeDays) 天</td>
+      <td>$(Badge -Text $h.ConnState -Kind $csKind)</td>
+    </tr>
+"@
+        }
+        $pcliHostBlock = @"
+  <h3 style="margin:24px 0 10px;font-size:14px;color:var(--text-2)">实时运行数据 <span class="muted" style="font-weight:400;font-size:12px">via PowerCLI</span></h3>
+  <table>
+    <thead><tr><th>主机</th><th>ESXi 版本</th><th>硬件</th><th>CPU</th><th>内存</th><th>Uptime</th><th>状态</th></tr></thead>
+    <tbody>$rowsPcli</tbody>
+  </table>
+"@
+    } elseif (-not $Script:PCLIEnabled) {
+        $pcliHostBlock = '<p class="muted" style="margin-top:10px;font-size:12px"><b>提示</b>: 启用 PowerCLI 回退 (-UsePowerCLI 或安装 VMware.PowerCLI) 可补全单主机 CPU/Mem/Uptime 等 REST 不暴露的实时数据。</p>'
+    }
+
     [void]$sb.AppendLine(@"
 <section id="sec-hosts">
   <h2><span class="num">9</span>ESXi 主机<span class="lbl">/api/vcenter/host</span></h2>
@@ -1113,7 +1382,7 @@ footer{text-align:center;color:var(--fg-dim);font-size:11px;font-family:var(--mo
     <thead><tr><th>Host ID</th><th>名称 / IP</th><th>连接状态</th><th>电源状态</th></tr></thead>
     <tbody>$hostRows</tbody>
   </table>
-  <p class="muted" style="margin-top:10px;font-size:12px">说明: REST API 8.0 单 host 详细信息端点 (CPU/Mem/Build/Uptime/Maintenance) 已 deprecated, 如需深入采集请使用 PowerCLI 或 vSphere SDK (vmodl)。</p>
+$pcliHostBlock
 </section>
 "@)
 
@@ -1297,7 +1566,114 @@ footer{text-align:center;color:var(--fg-dim);font-size:11px;font-family:var(--mo
 "@)
 
     # =========================================================
-    #  Section 16 — 总体建议
+    #  Section 16 — VM 快照健康 (v1.1, PowerCLI)
+    # =========================================================
+    if ($Script:PCLIEnabled -and $Data.PCLI_Snapshots) {
+        $sn = $Data.PCLI_Snapshots
+        $oldKind = if ($sn.OldestDays -gt 90) { 'red' } elseif ($sn.OldestDays -gt 30) { 'amber' } else { 'green' }
+        $chnKind = if ($sn.MaxChain -gt 3)    { 'amber' } elseif ($sn.MaxChain -gt 1) { 'blue' } else { 'green' }
+        $totKind = if ($sn.TotalGB -gt 1024)  { 'amber' } else { 'green' }
+        $topRows = ''
+        if ($sn.Top10.Count -eq 0) {
+            $topRows = '<tr><td colspan="6" class="empty">当前无任何快照,状态健康</td></tr>'
+        } else {
+            foreach ($s in $sn.Top10) {
+                $ageKind = if ($s.AgeDays -gt 90) { 'red' } elseif ($s.AgeDays -gt 30) { 'amber' } else { 'green' }
+                $topRows += @"
+    <tr>
+      <td class="w">$(Html-Encode $s.VM)</td>
+      <td class="w">$(Html-Encode $s.Snapshot)</td>
+      <td>$(Html-Encode $s.Created)</td>
+      <td>$(Badge -Text ("{0} 天" -f $s.AgeDays) -Kind $ageKind)</td>
+      <td>$($s.SizeGB) GB</td>
+      <td>$(Html-Encode $s.PowerState)</td>
+    </tr>
+"@
+            }
+        }
+        [void]$sb.AppendLine(@"
+<section id="sec-snap">
+  <h2><span class="num">16</span>VM 快照健康<span class="lbl">via PowerCLI · Get-Snapshot</span></h2>
+  <div class="info-grid" style="margin-bottom:14px">
+    <div><dt>有快照的 VM</dt><dd>$($sn.VmCount)</dd></div>
+    <div><dt>快照总数</dt><dd>$($sn.Count)</dd></div>
+    <div><dt>总占用</dt><dd>$(Badge -Text ("{0} GB" -f $sn.TotalGB) -Kind $totKind)</dd></div>
+    <div><dt>最老快照</dt><dd>$(Badge -Text ("{0} 天" -f $sn.OldestDays) -Kind $oldKind)</dd></div>
+    <div><dt>最长快照链</dt><dd>$(Badge -Text "$($sn.MaxChain) 层" -Kind $chnKind)</dd></div>
+  </div>
+  <h3 style="margin:18px 0 8px;font-size:13px;color:var(--text-2)">Top 10 占用最大的快照</h3>
+  <table>
+    <thead><tr><th>VM</th><th>快照名</th><th>创建时间</th><th>年龄</th><th>大小</th><th>电源</th></tr></thead>
+    <tbody>$topRows</tbody>
+  </table>
+  <p class="muted" style="margin-top:10px;font-size:12px">建议: 快照非备份机制, &gt; 30 天建议合并, &gt; 90 天强烈建议合并或删除; 快照链 &gt; 3 层会显著拖累 I/O。</p>
+</section>
+"@)
+    } else {
+        [void]$sb.AppendLine(@"
+<section id="sec-snap">
+  <h2><span class="num">16</span>VM 快照健康<span class="lbl">via PowerCLI</span></h2>
+  <p class="empty">PowerCLI 回退未启用, 跳过快照采集。<br><span class="muted">启用方式: <code>Install-Module VMware.PowerCLI -Scope CurrentUser</code> 或加参数 <code>-UsePowerCLI</code></span></p>
+</section>
+"@)
+    }
+
+    # =========================================================
+    #  Section 17 — Alarm 当前告警 (v1.1, PowerCLI)
+    # =========================================================
+    if ($Script:PCLIEnabled -and $null -ne $Data.PCLI_Alarms) {
+        $alarms = @($Data.PCLI_Alarms)
+        $redN  = @($alarms | Where-Object { "$($_.Status)" -eq 'red' }).Count
+        $yelN  = @($alarms | Where-Object { "$($_.Status)" -eq 'yellow' }).Count
+        $alarmRows = ''
+        if ($alarms.Count -eq 0) {
+            $alarmRows = '<tr><td colspan="6" class="empty">当前无任何 triggered alarm</td></tr>'
+        } else {
+            foreach ($a in $alarms) {
+                $stKind = if ("$($a.Status)" -eq 'red') { 'red' } elseif ("$($a.Status)" -eq 'yellow') { 'amber' } else { 'gray' }
+                $ackBg  = if ($a.Acked) { Badge -Text 'ACK' -Kind 'gray' } else { Badge -Text 'NEW' -Kind 'blue' }
+                $ageStr = if ($null -ne $a.AgeHours) {
+                    if ($a.AgeHours -lt 24) { ("{0:N1} h" -f $a.AgeHours) }
+                    else                    { ("{0:N1} d" -f ($a.AgeHours / 24)) }
+                } else { '—' }
+                $alarmRows += @"
+    <tr>
+      <td class="w">$(Html-Encode $a.Entity)</td>
+      <td>$(Html-Encode $a.EntityType)</td>
+      <td class="w">$(Html-Encode $a.Alarm)</td>
+      <td>$(Badge -Text $a.Status -Kind $stKind) $ackBg</td>
+      <td>$(Html-Encode $a.Time)</td>
+      <td>$ageStr</td>
+    </tr>
+"@
+            }
+        }
+        [void]$sb.AppendLine(@"
+<section id="sec-alarm">
+  <h2><span class="num">17</span>Alarm 当前告警<span class="lbl">via PowerCLI · TriggeredAlarmState</span></h2>
+  <div class="info-grid" style="margin-bottom:14px">
+    <div><dt>总告警</dt><dd>$($alarms.Count)</dd></div>
+    <div><dt>RED (严重)</dt><dd>$(Badge -Text "$redN" -Kind ($(if($redN -gt 0){'red'}else{'green'})))</dd></div>
+    <div><dt>YELLOW (警告)</dt><dd>$(Badge -Text "$yelN" -Kind ($(if($yelN -gt 0){'amber'}else{'green'})))</dd></div>
+  </div>
+  <table>
+    <thead><tr><th>实体</th><th>类型</th><th>Alarm</th><th>状态</th><th>触发时间</th><th>持续</th></tr></thead>
+    <tbody>$alarmRows</tbody>
+  </table>
+  <p class="muted" style="margin-top:10px;font-size:12px">说明: 仅显示当前 triggered 状态; 已 acknowledged 的告警仍会展示, 历史 Event 记录请在 vSphere Client → Monitor → Events 查看。</p>
+</section>
+"@)
+    } else {
+        [void]$sb.AppendLine(@"
+<section id="sec-alarm">
+  <h2><span class="num">17</span>Alarm 当前告警<span class="lbl">via PowerCLI</span></h2>
+  <p class="empty">PowerCLI 回退未启用, 跳过 Alarm 采集。<br><span class="muted">启用方式见上一章节。</span></p>
+</section>
+"@)
+    }
+
+    # =========================================================
+    #  Section 18 — 总体建议 (was 16)
     # =========================================================
     $short = $findings | Where-Object Severity -eq 'critical'
     $mid   = $findings | Where-Object Severity -eq 'warn'
@@ -1313,7 +1689,7 @@ footer{text-align:center;color:var(--fg-dim);font-size:11px;font-family:var(--mo
     }
     [void]$sb.AppendLine(@"
 <section id="sec-find">
-  <h2><span class="num">16</span>总体建议<span class="lbl">基于本次巡检数据动态生成</span></h2>
+  <h2><span class="num">18</span>总体建议<span class="lbl">基于本次巡检数据动态生成</span></h2>
   <div class="findings">
     <div class="find-col short">
       <h3><span class="dot"></span>短期 (立即处理 · 严重 $($short.Count))</h3>
@@ -1332,19 +1708,26 @@ footer{text-align:center;color:var(--fg-dim);font-size:11px;font-family:var(--mo
 "@)
 
     # =========================================================
-    #  Section 17 — 免责
+    #  Section 19 — 免责 (was 17)
     # =========================================================
+    $pcliNote = if ($Script:PCLIEnabled) {
+        '<p><b>PowerCLI 回退已启用</b>: 已通过 PowerCLI 补采单主机实时数据 (CPU/Mem/Uptime/Build)、VM 快照清单 (含大小 + 年龄) 与当前 Triggered Alarms。</p>'
+    } else {
+        '<p><b>PowerCLI 回退未启用</b>: 单主机实时数据 / VM 快照 / Alarm 三类数据未采集 (本次仅走 REST API)。如需补全, 请运行 <code>Install-Module VMware.PowerCLI -Scope CurrentUser</code> 后重跑, 或指定参数 <code>-UsePowerCLI</code>。</p>'
+    }
     [void]$sb.AppendLine(@"
 <section id="sec-discl">
-  <h2><span class="num">17</span>免责声明<span class="lbl">disclaimer</span></h2>
+  <h2><span class="num">19</span>免责声明<span class="lbl">disclaimer</span></h2>
   <div class="disclaimer">
     <h3>关于本报告</h3>
-    <p>本报告由 <b>vcenter_inspect.ps1 v1.0</b> 通过 vCenter REST API (vSphere Automation API) 自动采集生成, 不修改任何 vCenter 配置, 不写入任何文件到 vCenter Appliance。</p>
-    <p><b>REST API 8.0 限制</b>:</p>
+    <p>本报告由 <b>vcenter_inspect.ps1 v1.1.0</b> 通过 vCenter REST API (vSphere Automation API) 自动采集生成, 不修改任何 vCenter 配置, 不写入任何文件到 vCenter Appliance。v1.1 引入 PowerCLI 回退层, 补 REST 8.0 不暴露的快照 / Alarm / 单 host 实时数据。</p>
+    $pcliNote
+    <p><b>REST API 8.0 仍存在的限制</b>:</p>
     <ul>
-      <li>单 ESXi 主机详细信息 (CPU/Memory/Build/Uptime/Maintenance Mode) 已 deprecated, 需用 PowerCLI 或 vSphere SDK 补充。</li>
-      <li>VM 快照列表 / 大小、Alarm / Event / 告警历史、License 状态在 8.0 REST 未暴露, 需 vmodl SOAP 接口。</li>
-      <li>性能数据 (CPU/Memory/IOPS 历史曲线) 在 stats API (preview), 字段不稳定, 本版本未采集。</li>
+      <li>单 ESXi 主机详细信息 (CPU/Memory/Build/Uptime/Maintenance Mode) 已 deprecated, v1.1 通过 PowerCLI 补全。</li>
+      <li>VM 快照列表 / 大小、Alarm 触发状态在 REST 8.0 未暴露, v1.1 通过 PowerCLI 补全。</li>
+      <li>历史 Event / Task / 性能曲线 (CPU/Memory/IOPS) 仍未采集, 建议在 vSphere Client → Monitor → Events / Performance 中查看。</li>
+      <li>License 状态在 `/api/vcenter/licensing/licenses` 8.0 返回 404, 仍未采集。</li>
     </ul>
     <p>建议结合 VAMI (https://$VCenter:5480) 与 vSphere Client 手工核对告警明细。本报告中的"总体建议"基于通用最佳实践与本次数据生成, 实际优先级请根据业务场景判断。</p>
   </div>
@@ -1353,9 +1736,10 @@ footer{text-align:center;color:var(--fg-dim);font-size:11px;font-family:var(--mo
 
     # ---- footer + scroll-spy ----
     $cost = [int]((Get-Date) - $Script:T0).TotalSeconds
+    $pcliFooter = if ($Script:PCLIEnabled) { ' &nbsp;·&nbsp; <span style="color:var(--text-2)">PowerCLI 回退</span>' } else { '' }
     [void]$sb.AppendLine(@"
 <footer>
-  vcenter_inspect.ps1 v1.0 &nbsp;·&nbsp; 采集耗时 ${cost}s &nbsp;·&nbsp; 生成于 $(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')
+  vcenter_inspect.ps1 v1.1.0 &nbsp;·&nbsp; 采集耗时 ${cost}s &nbsp;·&nbsp; 生成于 $(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')$pcliFooter
 </footer>
 </main>
 <script>
@@ -1393,6 +1777,14 @@ try {
     Log-Err $_.Exception.Message
     try { Logout-VC } catch {}
     exit 2
+}
+
+# v1.1: PowerCLI 回退 (默认: 已装就用, 没装就跳过; -SkipPowerCLI 强制关; -UsePowerCLI 强制开)
+try {
+    Collect-PowerCLI
+} catch {
+    Log-Warn ("PowerCLI 回退异常 (跳过, 不影响 REST 主报告): $($_.Exception.Message)")
+    try { Disconnect-PowerCLI } catch {}
 }
 
 $html = Render-Report

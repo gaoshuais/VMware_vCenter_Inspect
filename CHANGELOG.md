@@ -11,11 +11,65 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Planned
 
-- PowerCLI 回退模式（补 REST 拿不到的 snapshot 大小 / Alarm 历史 / 单 host CPU/Mem 实时）
 - 多 vCenter 批量模式（`-VCenter @('vc1','vc2','vc3')`）
 - 基线对比（跟上次 findings 做 diff，只输出新增 / 已解决告警）
 - Telegram / 飞书 / 钉钉告警推送（`-Notify` 参数）
 - 配置文件（阈值从 `vcenter_inspect.config.json` 读取）
+
+---
+
+## [1.1.0] — 2026-06-19
+
+### Added
+
+#### PowerCLI 回退层
+
+REST API 8.0 至今未暴露的三类数据，本版本通过可选 PowerCLI 回退补全：
+
+- **单 ESXi 主机实时数据** — `Get-VMHost`：CPU MHz 使用率 / 内存 GB 使用率 / Uptime / Version+Build / 厂商型号 / 连接状态
+- **VM 快照清单** — `Get-Snapshot` 全 VM 遍历：每个快照的名称、创建时间、年龄（天）、大小（GB）、所属 VM 电源状态；聚合：有快照 VM 数 / 总快照数 / 总占用 GB / 最老快照年龄 / 最长快照链 / Top10 大快照表
+- **当前 Triggered Alarms** — 遍历 Datacenter/Cluster/Host/Datastore/VM 的 `TriggeredAlarmState`：实体名 / 类型 / Alarm 定义名 / 状态（red/yellow/gray）/ 触发时间 / 持续小时 / 已 ACK 标识
+
+#### 自动检测 + 优雅降级
+
+- **默认行为**：检测到 `VMware.VimAutomation.Core` 模块即启用；未装则跳过 PowerCLI 章节，不影响 REST 主报告
+- **`-UsePowerCLI`**：强制启用（未装时打印 `Install-Module VMware.PowerCLI` 安装提示）
+- **`-SkipPowerCLI`**：强制跳过（即使已装），只走纯 REST
+
+#### HTML 报告新增 2 章节 + 1 个内联模块
+
+- **Section 9 ESXi 主机** 注入 "实时运行数据" 副表（PowerCLI 启用时）
+- **Section 16 VM 快照健康**（新）—— KPI 卡片（VM 数 / 快照数 / 总占用 / 最老天数 / 最长链）+ Top10 表
+- **Section 17 Alarm 当前告警**（新）—— 红/黄计数 + 告警明细表
+- 原 16/17（总体建议 / 免责声明）顺延到 18/19
+
+#### 新增 Eval-Findings 规则（10 条）
+
+| 维度 | 规则 | 级别 |
+|---|---|---|
+| ESXi Memory | 使用率 ≥ 90% | critical |
+| ESXi Memory | 使用率 ≥ 80% | warn |
+| ESXi CPU    | 使用率 ≥ 85% | warn |
+| ESXi 连接   | Disconnected / NotResponding | critical |
+| ESXi Uptime | > 365 天 | info |
+| Snapshot    | 最老快照 > 90 天 | critical |
+| Snapshot    | 最老快照 > 30 天 | warn |
+| Snapshot    | 单 VM 链深 > 3 | warn |
+| Snapshot    | 总占用 > 1 TB | info |
+| Alarm       | RED 告警 > 0 | critical |
+| Alarm       | YELLOW 告警 > 5 | warn |
+
+### Changed
+
+- 脚本 banner 版本 `v1.0` → `v1.1.0`
+- 免责声明章节按 PowerCLI 状态动态显示提示文字
+- TOC 从 17 项扩展到 19 项
+
+### Compatibility
+
+- PowerCLI 13.x 已验证（VMware.PowerCLI 13.0+）
+- 已装 PowerCLI 时整体耗时 +10~20s（取决于 VM 数量与快照数）
+- 未装 PowerCLI 行为完全等同 v1.0（无破坏性变更）
 
 ---
 

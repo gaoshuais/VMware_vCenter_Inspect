@@ -5,7 +5,7 @@
 ![PowerShell](https://img.shields.io/badge/PowerShell-5.1%2B%20%2F%207%2B-blue)
 ![vCenter](https://img.shields.io/badge/vCenter-6.5%20--%208.0-success)
 ![License](https://img.shields.io/badge/License-MIT-green)
-![Version](https://img.shields.io/badge/Version-v1.0.0-blue)
+![Version](https://img.shields.io/badge/Version-v1.1.0-blue)
 
 ---
 
@@ -30,7 +30,7 @@
 
 ## 核心特性
 
-- **零依赖** — 只需 Windows PowerShell 5.1+，不装 PowerCLI / pyvmomi / Python，70 KB 单文件
+- **零依赖** — 只需 Windows PowerShell 5.1+，不装 PowerCLI / pyvmomi / Python（PowerCLI 仅作为可选回退增强）
 - **Dual-mode** — 自动适配 vCenter 6.5 / 6.7（`/rest/com/vmware/cis/...`）与 7.0 / 8.0+（`/api/...`）两套 REST API，无需手工指定版本
 - **17 章节** — 概览 / Health / 网络 / NTP / 访问 / 证书 / 备份 / 拓扑 / 主机 / Datastore / 网络 / VM 总览 / VM 列表 / Tools / 服务 / 总体建议 / 免责
 - **动态告警** — 18 条评估规则按 critical / warn / info 分级，最后一页自动归类成短期 / 中期 / 长期 3 列建议
@@ -256,7 +256,7 @@ Invoke-WebRequest `
 
 ## REST API 已知限制
 
-REST API 不暴露的部分，本工具不采集，如需补充请用 **PowerCLI** 或 **vSphere SDK (vmodl SOAP)**：
+REST API 8.0 仍未暴露的部分，v1.1 已通过可选 PowerCLI 回退补全。**未装 PowerCLI** 时这几栏空着不糊弄：
 
 - **单 ESXi 主机详细信息**：CPU / Memory / Build / Uptime / Maintenance Mode 在 8.0 端点 deprecated
 - **VM 快照列表 / 大小**：REST 能拿快照树，但 size 字段不暴露
@@ -264,9 +264,29 @@ REST API 不暴露的部分，本工具不采集，如需补充请用 **PowerCLI
 - **License 状态**：`/api/vcenter/licensing/licenses` 在 8.0 返回 404
 - **性能历史曲线**：CPU / Memory / IOPS stats API 仍是 preview，字段不稳
 
-巡检报告里这几栏会标注"REST 不支持，请用 PowerCLI / vSphere Client 查看"，不糊弄。
+**v1.1 PowerCLI 回退已上线** — 检测到 `VMware.VimAutomation.Core` 模块即自动启用，补全：
 
-后续 `v1.1` 计划加 PowerCLI 回退模式，检测到 PowerCLI 已装则用它补这一块（详见 [路线图](#路线图)）。
+| REST 拿不到 | v1.1 PowerCLI 补全 |
+|---|---|
+| 单 ESXi 主机 CPU/Mem/Uptime 实时 | ESXi 主机章节注入"实时运行数据"副表 |
+| VM 快照大小 / 年龄 / 链深度 | 新增 **Section 16 VM 快照健康** + Top10 表 |
+| 当前 Triggered Alarms | 新增 **Section 17 Alarm 当前告警** |
+
+启用方式：
+
+```powershell
+# 一次性安装 (3-5 分钟,首次约 300 MB)
+Install-Module VMware.PowerCLI -Scope CurrentUser -Force
+
+# 然后跑脚本即可自动检测
+.\vcenter_inspect.ps1 -VCenter ... -Username ... -Password ...
+
+# 或显式开关
+.\vcenter_inspect.ps1 ... -UsePowerCLI   # 强制启用
+.\vcenter_inspect.ps1 ... -SkipPowerCLI  # 强制跳过 (即使已装)
+```
+
+未装 PowerCLI 时这两个新章节会显示"未启用 PowerCLI 回退,跳过"提示，REST 主报告完全不受影响。
 
 ---
 
@@ -358,17 +378,24 @@ LICENSE                        # MIT
 - [x] UTF-8 中文 VM 名支持（手控 `HttpWebRequest`，绕过 PS 5.1 GBK 解码）
 - [x] 完整文档：README / CHANGELOG / LICENSE / Demo 报告 / 截图样张
 
-### v1.1 — 计划中
+### v1.1.0 — 已发布（2026-06-19）
+
+- [x] **PowerCLI 回退层** — 检测到 `VMware.VimAutomation.Core` 自动启用，补 REST 拿不到的 VM 快照大小、当前 Alarm、Host 实时负载
+- [x] HTML 报告新增 2 章节（**Section 16 VM 快照健康** + **Section 17 Alarm 当前告警**），ESXi 主机章节注入实时副表
+- [x] 新增 10 条 PowerCLI 维度 Findings 规则（Memory ≥ 90% critical / 快照 > 90 天 critical / RED alarm 等）
+- [x] 优雅降级：未装 PowerCLI 时这两章节显示提示，REST 主报告完全不受影响
+- [x] 新增参数 `-UsePowerCLI` / `-SkipPowerCLI`
+
+### v1.2 — 计划中
 
 | 优先级 | 项目                | 说明                                                                            | 状态        |
 | ------ | ------------------- | ------------------------------------------------------------------------------- | ----------- |
-| P0     | PowerCLI 回退模式   | 检测到 PowerCLI 已装则补 REST 拿不到的（VM 快照大小 / Alarm 历史 / Host 实时负载） | 设计中      |
 | P0     | 多 vCenter 批量     | `-VCenter @('vc1','vc2','vc3')` 一次跑一组 + 生成对比汇总报告                    | 待启动      |
 | P1     | Findings 基线对比   | 跟上次结果 diff，只输出新增 / 已解决告警，便于做周报                              | 待启动      |
 | P1     | 7.0 / 7.0U3 实测     | 路径已通过 dual-mode 自动匹配，缺真实环境验证                                    | 求社区帮跑  |
 | P2     | `-RetryOnLoginFail` | sts-idmd 慢启动时登录阶段也走指数退避                                            | 待启动      |
 
-### v1.2 — 设想中
+### v1.3 — 设想中
 
 | 项目                 | 说明                                                            |
 | -------------------- | --------------------------------------------------------------- |
