@@ -5,7 +5,7 @@
 ![PowerShell](https://img.shields.io/badge/PowerShell-5.1%2B%20%2F%207%2B-blue)
 ![vCenter](https://img.shields.io/badge/vCenter-6.5%20--%208.0-success)
 ![License](https://img.shields.io/badge/License-MIT-green)
-![Version](https://img.shields.io/badge/Version-v1.1.0-blue)
+![Version](https://img.shields.io/badge/Version-v1.2.0-blue)
 
 ---
 
@@ -352,7 +352,7 @@ Register-ScheduledTask -TaskName 'vCenter Weekly Inspect' `
 }
 ```
 
-> 多 vCenter 原生批量模式（`-VCenter @('vc1','vc2','vc3')` + 对比汇总）在 [v1.2 路线图](#路线图) 中。
+> 多 vCenter 原生批量模式（`-VCenter @('vc1','vc2','vc3')` + 对比汇总）在 [v1.3 路线图](#路线图) 中。
 
 ### CI / 邮件投递
 
@@ -420,7 +420,15 @@ LICENSE                        # MIT
 - [x] 优雅降级：未装 PowerCLI 时这两章节显示提示，REST 主报告完全不受影响
 - [x] 新增参数 `-UsePowerCLI` / `-SkipPowerCLI`
 
-### v1.2 — 计划中
+### v1.2.0 — 已发布（2026-06-19）
+
+- [x] **报告主题系统** — 4 套内置主题（light 新默认 / dark NOC / minimal / amber），通过 `-Theme` 选默认
+- [x] **报告内实时切换** — 右上角 4 色圆点切换器，点击秒换肤，`localStorage` 持久化偏好
+- [x] **主色单独覆盖** — `-AccentColor` 参数接任意 hex，强制覆盖所有主题的 accent
+- [x] CSS 架构重构：`:root` 拆为 `[data-theme="..."]` 4 个选择器块，扩展新主题只加 palette
+- [x] 体积影响：报告 ~42 KB → ~45 KB（+3.5 KB）；`@media print` 自动隐藏切换器
+
+### v1.3 — 计划中
 
 | 优先级 | 项目                | 说明                                                                            | 状态        |
 | ------ | ------------------- | ------------------------------------------------------------------------------- | ----------- |
@@ -429,7 +437,7 @@ LICENSE                        # MIT
 | P1     | 7.0 / 7.0U3 实测     | 路径已通过 dual-mode 自动匹配，缺真实环境验证                                    | 求社区帮跑  |
 | P2     | `-RetryOnLoginFail` | sts-idmd 慢启动时登录阶段也走指数退避                                            | 待启动      |
 
-### v1.3 — 设想中
+### v1.4 — 设想中
 
 | 项目                 | 说明                                                            |
 | -------------------- | --------------------------------------------------------------- |

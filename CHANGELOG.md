@@ -9,24 +9,50 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-### Added (v1.2 → 等多 vC 批量做完一起发)
-
-- **报告主题切换** — 新增 `-Theme` 参数，4 套内置主题：
-  - `light`（新默认，白底 + 工程师蓝，适合邮件 / 打印）
-  - `dark`（深灰 + 亮蓝 NOC，原 v1.0/v1.1 默认）
-  - `minimal`（灰白 + 近黑 accent）
-  - `amber`（米色 + 琥珀棕，暖色商务）
-- **报告内实时切换主题** — 右上角悬浮 4 色圆点切换器，点击即换肤，无需重跑脚本。`localStorage` 持久化用户偏好，再次打开同一份 HTML 自动恢复上次选择
-- **主色单独覆盖** — 新增 `-AccentColor` 参数，接 hex 如 `#10b981`，单独覆盖该主题的 accent 而不切整套配色（对所有 4 主题生效）
-- HTML `:root` 重构为 ~15 个 CSS variables，4 套主题全部内嵌（`[data-theme="..."]` 切换），新增章节只需写一遍样式即可全主题统一
-- 体积成本：报告从 ~42 KB → ~45 KB（+3 KB），打印时 `@media print` 自动隐藏切换器
-
 ### Planned
 
 - 多 vCenter 批量模式（`-VCenter @('vc1','vc2','vc3')`）
 - 基线对比（跟上次 findings 做 diff，只输出新增 / 已解决告警）
 - Telegram / 飞书 / 钉钉告警推送（`-Notify` 参数）
 - 配置文件（阈值从 `vcenter_inspect.config.json` 读取）
+
+---
+
+## [1.2.0] — 2026-06-19
+
+### Added
+
+#### 主题系统（生成时 + 报告内双重切换）
+
+- **4 套内置主题**，通过新增 `-Theme` 参数选择默认：
+  - `light`（**新默认**，白底 + 工程师蓝 `#1565c0`，适合邮件 / 打印 / 客户交付）
+  - `dark`（深灰 + 亮蓝 NOC `#58a6ff`，原 v1.0/v1.1 默认风格）
+  - `minimal`（灰白 + 近黑 accent `#27272a`，黑白打印友好）
+  - `amber`（米色 + 琥珀棕 `#b45309`，暖色商务）
+- **报告内实时切换** — 报告右上角悬浮 4 色圆点切换器，点击即换肤，**无需重跑脚本**。`localStorage` (`vci_theme`) 持久化用户偏好，刷新或重开同一份 HTML 自动恢复上次选择
+- **主色单独覆盖** — 新增 `-AccentColor` 参数，接 hex 如 `#10b981`，用 `!important` 强制覆盖所有 4 主题的 accent 变量
+- `-Theme` 在 v1.2 退化为「**首次打开默认主题**」（无 localStorage 时生效）；用户一旦点过切换器，下次以 localStorage 为准
+
+#### CSS 架构重构
+
+- HTML `:root` 拆分为 4 个 `[data-theme="..."]` 选择器块，~15 个 CSS variables 集中控制 bg/fg/border/accent/状态色
+- 新增章节只需写一遍样式即可全主题统一，未来主题扩展只加 palette 不动业务 CSS
+- `<html data-theme="$Theme">` 由 PowerShell 注入初始值，JS 在 `DOMContentLoaded` 前读 localStorage 决定最终主题
+
+### Changed
+
+- 脚本 banner 版本 `v1.1.0` → `v1.2.0`
+- 报告 sidebar brand 子标题 `v1.0` → `v1.2.0`
+- 报告 footer 版本字符串同步更新
+- 免责声明章节追加 v1.2 主题说明
+- `@media print` 自动隐藏切换器，打印 PDF 不受影响
+
+### Compatibility
+
+- 体积：报告从 ~42 KB → **~45 KB**（+3.5 KB，4 套主题 CSS + 切换 JS）
+- 性能：无影响（4 套 CSS 都是 `:root` 变量声明，浏览器开销可忽略）
+- 浏览器：Chrome/Edge/Firefox/Safari 现代版均支持 `[data-attr]` selector + `localStorage` + ES5 IIFE，无依赖
+- **向下兼容**：未指定 `-Theme` 默认 light（**与 v1.1 dark NOC 风格不同**，介意请显式 `-Theme dark`）
 
 ---
 

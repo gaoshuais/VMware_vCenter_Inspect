@@ -51,7 +51,7 @@
     Author : Claude Opus 4.7
     Date   : 2026-06-19
     Style  : 仿 linux_inspect.sh v2.4 工程师风
-    Version: v1.1.0 (PowerCLI 回退层)
+    Version: v1.2.0 (主题切换 + 报告内实时换肤)
 #>
 
 [CmdletBinding()]
@@ -110,7 +110,7 @@ function Log-Banner {
     $line = '═' * 70
     Write-Host ''
     Write-Host $line -ForegroundColor DarkCyan
-    Write-Host (' vCenter Inspect  v1.1.0 |  target: {0}   |  {1}' -f $VCenter, (Get-Date -Format 'yyyy-MM-dd HH:mm:ss')) -ForegroundColor Cyan
+    Write-Host (' vCenter Inspect  v1.2.0 |  target: {0}   |  {1}' -f $VCenter, (Get-Date -Format 'yyyy-MM-dd HH:mm:ss')) -ForegroundColor Cyan
     Write-Host (' steps: {0}                  |  user  : {1}' -f $Script:StepTotal, $Username) -ForegroundColor DarkGray
     Write-Host $line -ForegroundColor DarkCyan
     Write-Host ''
@@ -1115,7 +1115,7 @@ footer{text-align:center;color:var(--fg-dim);font-size:11px;font-family:var(--mo
     # ---- sidebar ----
     [void]$sb.AppendLine('<aside class="sidebar">')
     [void]$sb.AppendLine('  <div class="brand">')
-    [void]$sb.AppendLine("    <div class='logo'>$logoSvg<div><div class='name'>vCenter Inspect</div><div class='sub'>v1.0</div></div></div>")
+    [void]$sb.AppendLine("    <div class='logo'>$logoSvg<div><div class='name'>vCenter Inspect</div><div class='sub'>v1.2.0</div></div></div>")
     [void]$sb.AppendLine('  </div>')
     [void]$sb.AppendLine('  <nav>')
     foreach ($t in $toc) {
@@ -1780,7 +1780,7 @@ $pcliHostBlock
   <h2><span class="num">19</span>免责声明<span class="lbl">disclaimer</span></h2>
   <div class="disclaimer">
     <h3>关于本报告</h3>
-    <p>本报告由 <b>vcenter_inspect.ps1 v1.1.0</b> 通过 vCenter REST API (vSphere Automation API) 自动采集生成, 不修改任何 vCenter 配置, 不写入任何文件到 vCenter Appliance。v1.1 引入 PowerCLI 回退层, 补 REST 8.0 不暴露的快照 / Alarm / 单 host 实时数据。</p>
+    <p>本报告由 <b>vcenter_inspect.ps1 v1.2.0</b> 通过 vCenter REST API (vSphere Automation API) 自动采集生成, 不修改任何 vCenter 配置, 不写入任何文件到 vCenter Appliance。v1.1 引入 PowerCLI 回退层, 补 REST 8.0 不暴露的快照 / Alarm / 单 host 实时数据; v1.2 加入 4 套主题 + 报告内实时切换 (右上角圆点)。</p>
     $pcliNote
     <p><b>REST API 8.0 仍存在的限制</b>:</p>
     <ul>
@@ -1799,7 +1799,7 @@ $pcliHostBlock
     $pcliFooter = if ($Script:PCLIEnabled) { ' &nbsp;·&nbsp; <span style="color:var(--text-2)">PowerCLI 回退</span>' } else { '' }
     [void]$sb.AppendLine(@"
 <footer>
-  vcenter_inspect.ps1 v1.1.0 &nbsp;·&nbsp; 采集耗时 ${cost}s &nbsp;·&nbsp; 生成于 $(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')$pcliFooter
+  vcenter_inspect.ps1 v1.2.0 &nbsp;·&nbsp; 采集耗时 ${cost}s &nbsp;·&nbsp; 生成于 $(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')$pcliFooter
 </footer>
 </main>
 <script>
